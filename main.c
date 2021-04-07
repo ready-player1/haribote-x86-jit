@@ -5,22 +5,28 @@
 
 typedef unsigned char *String;
 
-void loadText(int argc, const char **argv, String text, int size)
+int loadText(String path, String text, int size)
 {
-  if (argc < 2) {
-    printf("usage: %s program-file\n", argv[0]);
-    exit(1);
-  }
+  unsigned char buf[1000];
 
-  FILE *fp = fopen(argv[1], "rt");
+  int startPos = path[0] == '"'; // ダブルクォートがあれば外す
+  int i = 0;
+  while (path[ startPos + i ] != 0 && path[ startPos + i ] != '"') {
+    buf[i] = path[ startPos + i ];
+    ++i;
+  }
+  buf[i] = 0;
+
+  FILE *fp = fopen(buf, "rt");
   if (fp == NULL) {
-    printf("failed to open %s\n", argv[1]);
-    exit(1);
+    printf("failed to open %s\n", path);
+    return 1;
   }
 
   int nItems = fread(text, 1, size - 1, fp);
   fclose(fp);
   text[nItems] = 0;
+  return 0;
 }
 
 #define MAX_TOKEN_CODE 1000 // 格納できるトークンコードの最大値
@@ -100,8 +106,14 @@ int tokenCodes[10000]; // トークンコードを格納する
 
 int main(int argc, const char **argv)
 {
+  if (argc < 2) {
+    printf("usage>%s program-file\n", argv[0]);
+    exit(1);
+  }
+
   unsigned char text[10000]; // ソースコード
-  loadText(argc, argv, text, 10000);
+  if (loadText((String) argv[1], text, 10000) != 0)
+    exit(1);
 
   int nTokens = lexer(text, tokenCodes);
 
