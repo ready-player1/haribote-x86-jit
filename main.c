@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef unsigned char *String;
 
@@ -121,6 +122,7 @@ int main(int argc, const char **argv)
   int print     = getTokenCode("print", 5);
   int _if       = getTokenCode("if", 2);
   int _goto     = getTokenCode("goto", 4);
+  int time      = getTokenCode("time", 4);
 
   String *ts = tokenStrs;  // 添字に指定したトークンコードに対応するトークン文字列のポインタを格納している配列
   int    *tc = tokenCodes; // トークンコードを格納している配列
@@ -156,6 +158,8 @@ int main(int argc, const char **argv)
       if (tc[pc + 3] == les   && ope1 < ope2)  { pc = dest; continue; }
       if (tc[pc + 3] == gtr   && ope1 > ope2)  { pc = dest; continue; }
     }
+    else if (tc[pc] == time && tc[pc + 1] == semicolon)
+      printf("time: %.3f[sec]\n", clock() / (double) CLOCKS_PER_SEC);
     else
       goto err;
 
