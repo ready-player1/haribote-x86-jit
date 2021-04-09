@@ -5,22 +5,28 @@
 
 typedef unsigned char *String;
 
-void loadText(int argc, const char **argv, String text, int size)
+int loadText(String path, String text, int size)
 {
-  if (argc < 2) {
-    printf("usage: %s program-file\n", argv[0]);
-    exit(1);
-  }
+  unsigned char buf[1000];
 
-  FILE *fp = fopen(argv[1], "rt");
+  int startPos = path[0] == '"'; // ダブルクォートがあれば外す
+  int i = 0;
+  while (path[ startPos + i ] != 0 && path[ startPos + i ] != '"') {
+    buf[i] = path[ startPos + i ];
+    ++i;
+  }
+  buf[i] = 0;
+
+  FILE *fp = fopen(buf, "rt");
   if (fp == NULL) {
-    printf("failed to open %s\n", argv[1]);
-    exit(1);
+    printf("failed to open %s\n", path);
+    return 1;
   }
 
   int nItems = fread(text, 1, size - 1, fp);
   fclose(fp);
   text[nItems] = 0;
+  return 0;
 }
 
 #define MAX_TOKEN_CODE 1000 // 格納できるトークンコードの最大値
@@ -98,12 +104,11 @@ int lexer(String str, int *tokenCodes)
 
 int tokenCodes[10000]; // トークンコードを格納する
 
-int main(int argc, const char **argv)
+int run(String sourceCode)
 {
-  unsigned char text[10000]; // ソースコード
-  loadText(argc, argv, text, 10000);
+  clock_t t0 = clock();
 
-  int nTokens = lexer(text, tokenCodes);
+  int nTokens = lexer(sourceCode, tokenCodes);
 
   int equal     = getTokenCode("==", 2);
   int notEq     = getTokenCode("!=", 2);
@@ -126,6 +131,7 @@ int main(int argc, const char **argv)
 
   String *ts = tokenStrs;  // 添字に指定したトークンコードに対応するトークン文字列のポインタを格納している配列
   int    *tc = tokenCodes; // トークンコードを格納している配列
+  tc[nTokens++] = semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = period; // エラー表示用
   int pc;
   for (pc = 0; pc < nTokens; ++pc) { // ラベル定義命令を探して位置を登録
@@ -159,7 +165,9 @@ int main(int argc, const char **argv)
       if (tc[pc + 3] == gtr   && ope1 > ope2)  { pc = dest; continue; }
     }
     else if (tc[pc] == time && tc[pc + 1] == semicolon)
-      printf("time: %.3f[sec]\n", clock() / (double) CLOCKS_PER_SEC);
+      printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
+    else if (tc[pc] == semicolon)
+      ;
     else
       goto err;
 
@@ -167,8 +175,52 @@ int main(int argc, const char **argv)
       ++pc;
     ++pc; // セミコロンを読み飛ばす
   }
-  exit(0);
+  return 0;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
-  exit(1);
+  return 1;
+}
+
+int main(int argc, const char **argv)
+{
+  unsigned char text[10000]; // ソースコード
+
+  if (argc >= 2) {
+    if (loadText((String) argv[1], text, 10000) != 0)
+      exit(1);
+    run(text);
+    exit(0);
+  }
+
+  int inputLen;
+  int hasRemovedSemicolon;
+  char *semicolonPos;
+  for (int i = 0;; ++i) { // Read-Eval-Print Loop
+    printf("[%d]> ", i);
+    fgets(text, 10000, stdin);
+    inputLen = strlen(text);
+    if (text[inputLen - 1] == '\n') // chomp
+      text[inputLen - 1] = 0;
+
+    hasRemovedSemicolon = 0;
+    for (int i = strlen(text) - 1; i >= 0; --i) {
+      if (text[i] == ';') {
+        text[i] = 0;
+        semicolonPos = &text[i];
+        hasRemovedSemicolon = 1;
+        break;
+      }
+    }
+
+    if (strcmp(text, "exit") == 0)
+      exit(0);
+    if (strncmp(text, "run ", 4) == 0) {
+      if (loadText(&text[4], text, 10000) == 0)
+        run(text);
+      continue;
+    }
+    if (hasRemovedSemicolon)
+      *semicolonPos = ';';
+    run(text);
+  }
 }
