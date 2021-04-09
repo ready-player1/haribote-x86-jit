@@ -203,16 +203,21 @@ int main(int argc, const char **argv)
       text[inputLen - 1] = 0;
 
     hasRemovedSemicolon = 0;
-    if ((semicolonPos = strchr(text, ';'))) {
-      *semicolonPos = 0;
-      hasRemovedSemicolon = 1;
+    for (int i = strlen(text) - 1; i >= 0; --i) {
+      if (text[i] == ';') {
+        text[i] = 0;
+        semicolonPos = &text[i];
+        hasRemovedSemicolon = 1;
+        break;
+      }
     }
 
     if (strcmp(text, "exit") == 0)
       exit(0);
     if (strncmp(text, "run ", 4) == 0) {
-      if (loadText(&text[4], text, 10000) != 0)
-        continue;
+      if (loadText(&text[4], text, 10000) == 0)
+        run(text);
+      continue;
     }
     if (hasRemovedSemicolon)
       *semicolonPos = ';';
