@@ -218,57 +218,151 @@ int match(int phraseId, String phrase, int pc)
   return 1; // マッチした
 }
 
-int run(String sourceCode)
-{
-  clock_t t0 = clock();
+typedef int *IntPtr;
 
+IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
+IntPtr *icp;
+
+enum opcode {
+  OpCpy = 0,
+  OpAdd,
+  OpSub,
+  OpPrint,
+  OpGoto,
+  OpJeq,
+  OpJne,
+  OpJle,
+  OpJge,
+  OpJlt,
+  OpJgt,
+  OpTime,
+  OpEnd,
+  OpAdd1,
+};
+
+void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
+{
+  icp[0] = (IntPtr) op;
+  icp[1] = p1;
+  icp[2] = p2;
+  icp[3] = p3;
+  icp[4] = p4;
+  icp += 5;
+}
+
+int compile(String sourceCode)
+{
   int nTokens = lexer(sourceCode, tokenCodes);
 
   String *ts = tokenStrs;  // 添字に指定したトークンコードに対応するトークン文字列のポインタを格納している配列
   int    *tc = tokenCodes; // トークンコードを格納している配列
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
+
+  icp = internalCodes;
+
   int pc;
-  for (pc = 0; pc < nTokens; ++pc) { // ラベル定義命令を探して位置を登録
-    if (match(0, "!!*0:", pc))
-      vars[tc[pc]] = nextPc; // ラベル定義命令の次のpc値を変数に記憶させておく
-  }
   for (pc = 0; pc < nTokens;) {
-    if (match(1, "!!*0 = !!*1;", pc))
-      vars[tc[wpc[0]]] = vars[tc[wpc[1]]];
-    else if (match(2, "!!*0 = !!*1 + !!*2;", pc))
-      vars[tc[wpc[0]]] = vars[tc[wpc[1]]] + vars[tc[wpc[2]]];
-    else if (match(3, "!!*0 = !!*1 - !!*2;", pc))
-      vars[tc[wpc[0]]] = vars[tc[wpc[1]]] - vars[tc[wpc[2]]];
-    else if (match(4, "print !!*0;", pc))
-      printf("%d\n", vars[tc[wpc[0]]]);
-    else if (match(0, "!!*0:", pc)) // ラベル定義命令
-      ;
+    if (match(1, "!!*0 = !!*1;", pc)) {
+      putIc(OpCpy, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+    }
+    else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
+      putIc(OpAdd1, &vars[tc[wpc[0]]], 0, 0, 0);
+    }
+    else if (match(2, "!!*0 = !!*1 + !!*2;", pc)) {
+      putIc(OpAdd, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
+    }
+    else if (match(3, "!!*0 = !!*1 - !!*2;", pc)) {
+      putIc(OpSub, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
+    }
+    else if (match(4, "print !!*0;", pc)) {
+      putIc(OpPrint, &vars[tc[wpc[0]]], 0, 0, 0);
+    }
+    else if (match(0, "!!*0:", pc)) { // ラベル定義命令
+      vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
+    }
     else if (match(5, "goto !!*0;", pc)) {
-      pc = vars[tc[wpc[0]]];
-      continue;
+      putIc(OpGoto, &vars[tc[wpc[0]]], 0, 0, 0);
     }
     else if (match(6, "if (!!*0 !!*1 !!*2) goto !!*3;", pc) && Equal <= tc[wpc[1]] && tc[wpc[1]] <= Gtr) {
-      int dest = vars[tc[wpc[3]]], ope1 = vars[tc[wpc[0]]], ope2 = vars[tc[wpc[2]]];
-      if (tc[wpc[1]] == Equal && ope1 == ope2) { pc = dest; continue; }
-      if (tc[wpc[1]] == NotEq && ope1 != ope2) { pc = dest; continue; }
-      if (tc[wpc[1]] == LesEq && ope1 <= ope2) { pc = dest; continue; }
-      if (tc[wpc[1]] == GtrEq && ope1 >= ope2) { pc = dest; continue; }
-      if (tc[wpc[1]] == Les   && ope1 < ope2)  { pc = dest; continue; }
-      if (tc[wpc[1]] == Gtr   && ope1 > ope2)  { pc = dest; continue; }
+      putIc(OpJeq + (tc[wpc[1]] - Equal), &vars[tc[wpc[3]]], &vars[tc[wpc[0]]], &vars[tc[wpc[2]]], 0);
     }
-    else if (match(7, "time;", pc))
-      printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
-    else if (match(8, ";", pc))
+    else if (match(7, "time;", pc)) {
+      putIc(OpTime, 0, 0, 0, 0);
+    }
+    else if (match(8, ";", pc)) {
       ;
-    else
+    }
+    else {
       goto err;
+    }
     pc = nextPc;
   }
-  return 0;
+  putIc(OpEnd, 0, 0, 0, 0);
+  IntPtr *end = icp;
+  int op;
+  for (icp = internalCodes; icp < end; icp += 5) { // goto先の設定
+    op = (int) icp[0];
+    if (OpGoto <= op && op <= OpJgt)
+      icp[1] = (IntPtr) (internalCodes + *icp[1]);
+  }
+  return end - internalCodes;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
-  return 1;
+  return -1;
+}
+
+void exec()
+{
+  clock_t t0 = clock();
+  icp = internalCodes;
+  for (;;) {
+    switch ((int) icp[0]) {
+    case OpCpy:
+      *icp[1] = *icp[2];
+      icp += 5;
+      continue;
+    case OpAdd:
+      *icp[1] = *icp[2] + *icp[3];
+      icp += 5;
+      continue;
+    case OpSub:
+      *icp[1] = *icp[2] - *icp[3];
+      icp += 5;
+      continue;
+    case OpPrint:
+      printf("%d\n", *icp[1]);
+      icp += 5;
+      continue;
+    case OpGoto:
+      icp = (IntPtr *) icp[1];
+      continue;
+    case OpJeq: if (*icp[2] == *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJne: if (*icp[2] != *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJle: if (*icp[2] <= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJge: if (*icp[2] >= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJlt: if (*icp[2] <  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJgt: if (*icp[2] >  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpTime:
+      printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
+      icp += 5;
+      continue;
+    case OpEnd:
+      return;
+    case OpAdd1:
+      ++(*icp[1]);
+      icp += 5;
+      continue;
+    }
+  }
+}
+
+int run(String sourceCode)
+{
+  if (compile(sourceCode) < 0)
+    return 1;
+  exec();
+  return 0;
 }
 
 int main(int argc, const char **argv)
