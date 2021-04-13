@@ -106,6 +106,8 @@ int tokenCodes[10000]; // トークンコードを格納する
 
 enum keyId {
   WildCard = 0,
+  WildCardForExpr,
+  WildCardForExpr0,
   Equal,
   NotEq,
   LesEq,
@@ -115,9 +117,14 @@ enum keyId {
   Colon,
   Lparen,
   Rparen,
+  Lbracket,
+  Rbracket,
+  Lbrace,
+  Rbrace,
   Plus,
   Minus,
   Period,
+  Comma,
   Semicolon,
   Assigne,
 
@@ -142,6 +149,8 @@ enum keyId {
 
 String defaultTokens[] = {
   "!!*",
+  "!!**",
+  "!!***",
   "==",
   "!=",
   "<=",
@@ -151,9 +160,14 @@ String defaultTokens[] = {
   ":",
   "(",
   ")",
+  "[",
+  "]",
+  "{",
+  "}",
   "+",
   "-",
   ".",
+  ",",
   ";",
   "=",
 
@@ -185,8 +199,10 @@ void initTokenCodes(String *defaultTokens, int len)
 }
 
 #define MAX_PHRASE_LEN 31
+#define WPC_LEN 9
 int tokenCodesForPhrase[ (MAX_PHRASE_LEN + 1) * 100 ]; // フレーズを字句解析して得たトークンコードを格納する
-int nextPc, wpc[9]; // 一致したフレーズの次のトークンを指す, ワイルドカードのトークンの場所を指す
+int nextPc, wpc[WPC_LEN]; // 一致したフレーズの次のトークンを指す, ワイルドカードのトークンの場所を指す
+int wpcEnd[WPC_LEN]; // wpc[n]が式の場合、wpcEnd[n]はその式の直後のトークンを指す
 
 // tokenCodes[pc]からのトークンコード列が、phraseで指定されたトークン列と一致するかどうか調べる
 int match(int phraseId, String phrase, int pc)
@@ -202,15 +218,53 @@ int match(int phraseId, String phrase, int pc)
     tokenCodesForPhrase[ head + MAX_PHRASE_LEN ] = nTokens;
   }
   nTokens = tokenCodesForPhrase[ head + MAX_PHRASE_LEN ]; // フレーズに含まれるトークンの個数を取得
+  int tokenCode;
+  int depth;
   for (int i = 0, num; i < nTokens; ++i) {
-    if (tokenCodesForPhrase[head + i] == WildCard) {
+    tokenCode = tokenCodesForPhrase[head + i];
+    if (tokenCode == WildCard || tokenCode == WildCardForExpr || tokenCode == WildCardForExpr0) {
+      /*
+        WildCard（!!*#）
+        任意の1トークンにマッチする（#は0～8までの数字）。
+
+        WildCardForExpr（!!**#）
+        任意の式にマッチする（#は0～8までの数字）。
+        ただし、式は1トークン以上の長さでなければいけない）。
+
+        WildCardForExpr0（!!***#）
+        任意の式にマッチする（#は0～8までの数字）。
+        ただし、式は長さゼロでもよい。
+      */
       ++i;
       num = tokenCodesForPhrase[head + i] - Zero; // 後続の番号を取得
-      wpc[num] = pc;
-      ++pc;
+      wpc[num] = pc; // トークン・式の開始位置
+      if (tokenCode == WildCard) {
+        ++pc;
+        continue;
+      }
+      depth = 0; // 括弧の深さ
+      for (;;) {
+        if (tokenCodes[pc] == Semicolon)
+          break;
+        if (tokenCodes[pc] == Comma && depth == 0)
+          break;
+
+        if (tokenCodes[pc] == Lparen || tokenCodes[pc] == Lbracket) // 手抜きで ( と [ を区別せずに数えている
+          ++depth;
+        if (tokenCodes[pc] == Rparen || tokenCodes[pc] == Rbracket)
+          --depth;
+        if (depth < 0)
+          break;
+        ++pc;
+      }
+      wpcEnd[num] = pc; // 式の終了位置
+      if (tokenCode == WildCardForExpr && wpc[num] == pc)
+        return 0;
+      if (depth > 0)
+        return 0;
       continue;
     }
-    if (tokenCodesForPhrase[head + i] != tokenCodes[pc])
+    if (tokenCode != tokenCodes[pc])
       return 0; // マッチせず
     ++pc;
   }
