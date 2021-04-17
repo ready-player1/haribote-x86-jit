@@ -279,9 +279,21 @@ IntPtr *icp;
 
 enum opcode {
   OpCpy = 0,
+  OpCeq,
+  OpCne,
+  OpCle,
+  OpCge,
+  OpClt,
+  OpCgt,
   OpAdd,
   OpSub,
-  OpPrint,
+  OpMul,
+  OpDiv,
+  OpMod,
+  OpBand,
+  OpShr,
+  OpAdd1,
+  OpNeg,
   OpGoto,
   OpJeq,
   OpJne,
@@ -290,9 +302,9 @@ enum opcode {
   OpJlt,
   OpJgt,
   OpLop,
+  OpPrint,
   OpTime,
-  OpEnd,
-  OpAdd1,
+  OpEnd
 };
 
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
@@ -377,41 +389,39 @@ void exec()
   int i;
   for (;;) {
     switch ((int) icp[0]) {
-    case OpCpy:
-      *icp[1] = *icp[2];
-      icp += 5;
-      continue;
-    case OpAdd:
-      *icp[1] = *icp[2] + *icp[3];
-      icp += 5;
-      continue;
-    case OpSub:
-      *icp[1] = *icp[2] - *icp[3];
-      icp += 5;
-      continue;
+    case OpNeg:    *icp[1] = -*icp[2];           icp += 5; continue;
+    case OpAdd1:   ++(*icp[1]);                  icp += 5; continue;
+    case OpMul:    *icp[1] = *icp[2] *  *icp[3]; icp += 5; continue;
+    case OpDiv:    *icp[1] = *icp[2] /  *icp[3]; icp += 5; continue;
+    case OpMod:    *icp[1] = *icp[2] %  *icp[3]; icp += 5; continue;
+    case OpAdd:    *icp[1] = *icp[2] +  *icp[3]; icp += 5; continue;
+    case OpSub:    *icp[1] = *icp[2] -  *icp[3]; icp += 5; continue;
+    case OpShr:    *icp[1] = *icp[2] >> *icp[3]; icp += 5; continue;
+    case OpClt:    *icp[1] = *icp[2] <  *icp[3]; icp += 5; continue;
+    case OpCle:    *icp[1] = *icp[2] <= *icp[3]; icp += 5; continue;
+    case OpCgt:    *icp[1] = *icp[2] >  *icp[3]; icp += 5; continue;
+    case OpCge:    *icp[1] = *icp[2] >= *icp[3]; icp += 5; continue;
+    case OpCeq:    *icp[1] = *icp[2] == *icp[3]; icp += 5; continue;
+    case OpCne:    *icp[1] = *icp[2] != *icp[3]; icp += 5; continue;
+    case OpBand:   *icp[1] = *icp[2] &  *icp[3]; icp += 5; continue;
+    case OpCpy:    *icp[1] = *icp[2];            icp += 5; continue;
     case OpPrint:
       printf("%d\n", *icp[1]);
       icp += 5;
       continue;
-    case OpGoto:
-      icp = (IntPtr *) icp[1];
-      continue;
-    case OpJeq: if (*icp[2] == *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJne: if (*icp[2] != *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJle: if (*icp[2] <= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJge: if (*icp[2] >= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJlt: if (*icp[2] <  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJgt: if (*icp[2] >  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpGoto:                            icp = (IntPtr *) icp[1]; continue;
+    case OpJeq:   if (*icp[2] == *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJne:   if (*icp[2] != *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJle:   if (*icp[2] <= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJge:   if (*icp[2] >= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJlt:   if (*icp[2] <  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
+    case OpJgt:   if (*icp[2] >  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
     case OpTime:
       printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
       icp += 5;
       continue;
     case OpEnd:
       return;
-    case OpAdd1:
-      ++(*icp[1]);
-      icp += 5;
-      continue;
     case OpLop:
       i = *icp[2];
       ++i;
