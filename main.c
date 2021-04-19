@@ -339,6 +339,40 @@ enum opcode {
   OpEnd
 };
 
+int correspondingTerms[128] = {-1}; // in token codes and opcodes for infix operators
+
+void initCorrespondingTerms() {
+  correspondingTerms[Multi]      = OpMul;
+  correspondingTerms[Divi]       = OpDiv;
+  correspondingTerms[Mod]        = OpMod;
+  correspondingTerms[Plus]       = OpAdd;
+  correspondingTerms[Minus]      = OpSub;
+  correspondingTerms[ShiftRight] = OpShr;
+  correspondingTerms[Les]        = OpClt;
+  correspondingTerms[LesEq]      = OpCle;
+  correspondingTerms[Gtr]        = OpCgt;
+  correspondingTerms[GtrEq]      = OpCge;
+  correspondingTerms[Equal]      = OpCeq;
+  correspondingTerms[NotEq]      = OpCne;
+  correspondingTerms[BitwiseAnd] = OpBand;
+  correspondingTerms[Assigne]    = OpCpy;
+};
+
+int getOpcode(int tokenCode) // for infix operators
+{
+  if (tokenCode < 0 ||  EndOfKeys <= tokenCode) {
+    printf("tokenCode must be greater than 0 and less than %d, got %d\n", EndOfKeys, tokenCode);
+    exit(1);
+  }
+
+  int op = correspondingTerms[tokenCode];
+  if (op == -1) {
+    printf("no corresponding opcode for %s token\n", tokenStrs[tokenCode]);
+    exit(1);
+  }
+  return op;
+}
+
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
   icp[0] = (IntPtr) op;
@@ -372,6 +406,185 @@ void tmpFree(int tokenCode)
     tmpFlags[ tokenCode - Tmp0 ] = 0;
 }
 
+#define LOWEST_PRECEDENCE 99
+int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
+
+int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
+int expression(int num);
+
+enum notationStyle { Prefix = 0, Infix };
+
+typedef struct precedence {
+  int operator;
+  int level;
+} Precedence;
+
+#define N_OPERATORS 14
+
+Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
+  { // Prefix
+    {PlusPlus, 2},
+    {Minus, 2},
+    {.level = LOWEST_PRECEDENCE + 1}
+  },
+  { // Infix
+    {Multi, 4},
+    {Divi, 4},
+    {Mod, 4},
+    {Plus, 5},
+    {Minus, 5},
+    {ShiftRight, 6},
+    {LesEq, 7},
+    {GtrEq, 7},
+    {Les, 7},
+    {Gtr, 7},
+    {Equal, 8},
+    {NotEq, 8},
+    {BitwiseAnd, 9},
+    {Assigne, 15},
+    {.level = LOWEST_PRECEDENCE + 1}
+  }
+};
+
+int getPrecedenceLevel(int notationStyle, int operator)
+{
+  int i = 0;
+  Precedence *precedence;
+  while ((precedence = &precedenceTable[notationStyle][i])->level != LOWEST_PRECEDENCE + 1) {
+    if (operator == precedence->operator)
+      break;
+    ++i;
+  }
+  return precedence->level;
+}
+
+int evalInfixExpression(int i, int precedenceLevel, int op)
+{
+  int j, k;
+  ++epc;
+  j = evalExpression(precedenceLevel);
+  k = tmpAlloc();
+  putIc(op, &vars[k], &vars[i], &vars[j], 0);
+  tmpFree(i);
+  tmpFree(j);
+  if (i < 0 || j < 0)
+    return -1;
+  return k;
+}
+
+int evalExpression(int precedenceLevel)
+{
+  int er = -1; // ここまでの計算結果が入っている変数のトークンコード（vars[er]で計算結果にアクセスできる）
+  int e0 = 0;
+
+  nextPc = 0;
+
+  if (match(99, "( !!**0 )", epc)) { // 括弧
+    er = expression(0);
+  }
+  else if (tokenCodes[epc] == PlusPlus) { // 前置インクリメント
+    ++epc;
+    er = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
+    putIc(OpAdd1, &vars[er], 0, 0, 0);
+  }
+  else if (tokenCodes[epc] == Minus) { // 単項マイナス
+    ++epc;
+    e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
+    er = tmpAlloc();
+    putIc(OpNeg, &vars[er], &vars[e0], 0, 0);
+  }
+  else { // 変数もしくは定数
+    er = tokenCodes[epc];
+    ++epc;
+  }
+  if (nextPc > 0)
+    epc = nextPc;
+
+  int encountered; // ぶつかった演算子の優先順位を格納する
+  int tokenCode;
+  for (;;) {
+    tmpFree(e0);
+    if (er < 0 || e0 < 0) // ここまででエラーがあれば、処理を打ち切り
+      return -1;
+    if (epc >= epcEnd)
+      break;
+
+    e0 = 0;
+    tokenCode = tokenCodes[epc];
+    if (tokenCode == PlusPlus) { // 後置インクリメント
+      ++epc;
+      e0 = er;
+      er = tmpAlloc();
+      putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
+      putIc(OpAdd1, &vars[e0], 0, 0, 0);
+    }
+    else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
+      /*
+        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも低いか又は等しい
+        (値が大きいか又は等しい)ときは、このブロックを実行して中置演算子を評価する。
+
+        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも高い(値が小さい)
+        ときは、このブロックを実行せずにこれまでに式を評価した結果を呼び出し元に返す。
+      */
+      switch (tokenCode) {
+      // 左結合
+      case Multi: case Divi: case Mod:
+      case Plus: case Minus:
+      case ShiftRight:
+      case Les: case LesEq: case Gtr: case GtrEq:
+      case Equal: case NotEq:
+      case BitwiseAnd:
+        er = evalInfixExpression(er, encountered - 1, getOpcode(tokenCode));
+        break;
+      // 右結合
+      case Assigne:
+        ++epc;
+        e0 = evalExpression(encountered);
+        putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
+        break;
+      }
+    }
+    else
+      break;
+  }
+  return er;
+}
+
+// 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinternalCodes[]に書き込む
+int expression(int num)
+{
+  int expressionBegin = wpc   [num];
+  int expressionEnd   = wpcEnd[num];
+  if (expressionBegin == expressionEnd)
+    return 0;
+
+  // evalExpression()の中でmatch()やexpression()を呼び出すこともあり得るので、変数を退避しておく
+  int oldEpc    = epc;
+  int oldEpcEnd = epcEnd;
+  int buf[WPC_LEN * 2 + 1];
+  for (int i = 0; i < WPC_LEN; ++i) {
+    buf[i]           = wpc   [i];
+    buf[i + WPC_LEN] = wpcEnd[i];
+  }
+  buf[WPC_LEN * 2] = nextPc;
+
+  epc    = expressionBegin;
+  epcEnd = expressionEnd;
+  int er = evalExpression(LOWEST_PRECEDENCE);
+  if (epc < epcEnd) // 式を最後まで解釈できなかったらエラー
+    return -1;
+
+  // 保存しておいた変数を復元する
+  epc    = oldEpc;
+  epcEnd = oldEpcEnd;
+  for (int i = 0; i < WPC_LEN; ++i) {
+    wpc   [i] = buf[i];
+    wpcEnd[i] = buf[i + WPC_LEN];
+  }
+  nextPc = buf[WPC_LEN * 2];
+  return er;
+}
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
@@ -383,8 +596,12 @@ int compile(String sourceCode)
 
   icp = internalCodes;
 
+  for (int i = 0; i < N_TMPS; ++i)
+    tmpFlags[i] = 0;
+
   int pc;
   for (pc = 0; pc < nTokens;) {
+    int e0 = 0;
     if (match(1, "!!*0 = !!*1;", pc)) {
       putIc(OpCpy, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
@@ -400,8 +617,9 @@ int compile(String sourceCode)
     else if (match(3, "!!*0 = !!*1 - !!*2;", pc)) {
       putIc(OpSub, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
     }
-    else if (match(4, "print !!*0;", pc)) {
-      putIc(OpPrint, &vars[tc[wpc[0]]], 0, 0, 0);
+    else if (match(4, "print !!**0;", pc)) {
+      e0 = expression(0);
+      putIc(OpPrint, &vars[e0], 0, 0, 0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
       vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
@@ -415,12 +633,15 @@ int compile(String sourceCode)
     else if (match(7, "time;", pc)) {
       putIc(OpTime, 0, 0, 0, 0);
     }
-    else if (match(8, ";", pc)) {
-      ;
+    else if (match(8, "!!***0;", pc)) {
+      e0 = expression(0);
     }
     else {
       goto err;
     }
+    tmpFree(e0);
+    if (e0 < 0)
+      goto err;
     pc = nextPc;
   }
   putIc(OpEnd, 0, 0, 0, 0);
@@ -504,6 +725,7 @@ int main(int argc, const char **argv)
   unsigned char text[10000]; // ソースコード
 
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
+  initCorrespondingTerms();
 
   if (argc >= 2) {
     if (loadText((String) argv[1], text, 10000) != 0)
