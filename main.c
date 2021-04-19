@@ -349,6 +349,29 @@ void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
   icp += 5;
 }
 
+#define N_TMPS 10
+char tmpFlags[N_TMPS];
+
+// 未使用の一時変数を確保する
+int tmpAlloc()
+{
+  int i = 0;
+  while (tmpFlags[i] != 0) {
+    if (i >= N_TMPS)
+      return -1;
+    ++i;
+  }
+  tmpFlags[i] = 1;
+  return Tmp0 + i;
+}
+
+// 一時変数を未使用の状態に戻す（ただし、指定されたトークンコードが一時変数でないときは何もしない）
+void tmpFree(int tokenCode)
+{
+  if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
+    tmpFlags[ tokenCode - Tmp0 ] = 0;
+}
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
