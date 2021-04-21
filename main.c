@@ -585,6 +585,16 @@ int expression(int num)
   return er;
 }
 
+#define BLOCK_INFO_UNIT_SIZE 10
+int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth;
+/*
+  blockInfo[ blockDepth ] -> 現ブロックのblockTypeを取得する
+  blockInfo[ blockDepth - BLOCK_INFO_UNIT_SIZE ] -> 現ブロックの1つ外側のブロックのblockTypeを取得する
+  blockInfo[ blockDepth - BLOCK_INFO_UNIT_SIZE * 2 ] -> 現ブロックの2つ外側のブロックのblockTypeを取得する
+*/
+
+enum blockType { IfBlock = 1 };
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
