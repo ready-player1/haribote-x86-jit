@@ -585,6 +585,16 @@ int expression(int num)
   return er;
 }
 
+int tmpLabelNo;
+
+int tmpLabelAlloc()
+{
+  char str[10];
+  sprintf(str, "_l%d", tmpLabelNo);
+  ++tmpLabelNo;
+  return getTokenCode(str, strlen(str));
+}
+
 #define BLOCK_INFO_UNIT_SIZE 10
 int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth;
 /*
@@ -608,6 +618,7 @@ int compile(String sourceCode)
 
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
+  tmpLabelNo = 0;
 
   int pc;
   for (pc = 0; pc < nTokens;) {
