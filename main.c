@@ -160,6 +160,9 @@ enum keyId {
   Goto,
   Time,
   Else,
+  For,
+  Continue,
+  Break,
 
   EndOfKeys
 };
@@ -220,6 +223,9 @@ String defaultTokens[] = {
   "goto",
   "time",
   "else",
+  "for",
+  "continue",
+  "break",
 };
 
 void initTokenCodes(String *defaultTokens, int len)
@@ -617,7 +623,7 @@ int tmpLabelAlloc()
 }
 
 #define BLOCK_INFO_UNIT_SIZE 10
-int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth;
+int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth, loopDepth;
 /*
   blockInfo[ blockDepth ] -> 現ブロックのblockTypeを取得する
   blockInfo[ blockDepth - BLOCK_INFO_UNIT_SIZE ] -> 現ブロックの1つ外側のブロックのblockTypeを取得する
@@ -625,8 +631,9 @@ int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth;
 */
 
 #define BLOCK_TYPE 0
-enum blockType { IfBlock = 1 };
+enum blockType { IfBlock = 1, ForBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
+enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
 int compile(String sourceCode)
 {
@@ -642,12 +649,12 @@ int compile(String sourceCode)
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
   tmpLabelNo = 0;
-  blockDepth = 0;
+  blockDepth = loopDepth = 0;
 
   int pc;
   for (pc = 0; pc < nTokens;) {
-    IntPtr curBlock = &blockInfo[blockDepth];
-    int e0 = 0;
+    int *curBlock = &blockInfo[blockDepth];
+    int e0 = 0, e2 = 0;
     if (match(1, "!!*0 = !!*1;", pc)) {
       putIc(OpCpy, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
@@ -699,6 +706,63 @@ int compile(String sourceCode)
         vars[curBlock[IfLabel1]] = icp - internalCodes;
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
+    else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
+      blockDepth += BLOCK_INFO_UNIT_SIZE;
+      curBlock = &blockInfo[blockDepth];
+      curBlock[ BLOCK_TYPE  ] = ForBlock;
+      curBlock[ ForBegin    ] = tmpLabelAlloc();
+      curBlock[ ForContinue ] = tmpLabelAlloc();
+      curBlock[ ForBreak    ] = tmpLabelAlloc();
+
+      // ループを開始する直前のloopDepthとあとで式を評価する際に必要になる値を保存しておく
+      curBlock[ ForLoopDepth ] = loopDepth;
+      curBlock[ ForWpc1      ] = wpc   [1];
+      curBlock[ ForWpcEnd1   ] = wpcEnd[1];
+      curBlock[ ForWpc2      ] = wpc   [2];
+      curBlock[ ForWpcEnd2   ] = wpcEnd[2];
+
+      loopDepth = blockDepth;
+
+      e0 = expression(0);
+      if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
+        ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
+      vars[curBlock[ForBegin]] = icp - internalCodes;
+    }
+    else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
+      vars[curBlock[ForContinue]] = icp - internalCodes;
+
+      int wpc1 = curBlock[ForWpc1];
+      int wpc2 = curBlock[ForWpc2];
+      int isWpc1Les      = (wpc1 + 3 == curBlock[ForWpcEnd1]) && (tc[wpc1 + 1] == Les);
+      int isWpc2PlusPlus = (wpc2 + 2 == curBlock[ForWpcEnd2]) &&
+        ( (tc[wpc1] == tc[wpc2] && tc[wpc2 + 1] == PlusPlus) || (tc[wpc1] == tc[wpc2 + 1] && tc[wpc2] == PlusPlus) );
+
+      if (isWpc1Les && isWpc2PlusPlus)
+        putIc(OpLop, &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+      else {
+        wpc   [1] = curBlock[ ForWpc1    ];
+        wpcEnd[1] = curBlock[ ForWpcEnd1 ];
+        wpc   [2] = curBlock[ ForWpc2    ];
+        wpcEnd[2] = curBlock[ ForWpcEnd2 ];
+
+        e2 = expression(2);
+        if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
+          ifgoto(1, WhenConditionIsTrue, curBlock[ForBegin]);
+        else
+          putIc(OpGoto, &vars[curBlock[ForBegin]], 0, 0, 0);
+      }
+      vars[curBlock[ForBreak]] = icp - internalCodes;
+      loopDepth = curBlock[ForLoopDepth];
+      blockDepth -= BLOCK_INFO_UNIT_SIZE;
+    }
+    else if (match(16, "continue;", pc) && loopDepth > 0) {
+      int *loopBlock = &blockInfo[loopDepth];
+      putIc(OpGoto, &vars[loopBlock[ForContinue]], 0, 0, 0);
+    }
+    else if (match(17, "break;", pc) && loopDepth > 0) {
+      int *loopBlock = &blockInfo[loopDepth];
+      putIc(OpGoto, &vars[loopBlock[ForBreak]], 0, 0, 0);
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
@@ -706,12 +770,13 @@ int compile(String sourceCode)
       goto err;
     }
     tmpFree(e0);
-    if (e0 < 0)
+    tmpFree(e2);
+    if (e0 < 0 || e2 < 0)
       goto err;
     pc = nextPc;
   }
   if (blockDepth > 0) {
-    printf("block nesting error: blockDepth=%d, pc=%d, nTokens=%d\n", blockDepth, pc, nTokens);
+    printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
   putIc(OpEnd, 0, 0, 0, 0);
