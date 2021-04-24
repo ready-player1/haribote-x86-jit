@@ -139,6 +139,7 @@ enum keyId {
   Tmp9,
   PlusPlus,
   ShiftRight,
+  And,
   Equal,
   NotEq,
   Les,
@@ -203,6 +204,7 @@ String defaultTokens[] = {
   "_t9",
   "++",
   ">>",
+  "&&",
   "==",
   "!=",
   "<",
@@ -346,6 +348,7 @@ enum opcode {
   OpCge,
   OpCle,
   OpCgt,
+  OpAnd,
   OpAdd,
   OpSub,
   OpMul,
@@ -385,6 +388,7 @@ void initCorrespondingTerms() {
   correspondingTerms[Equal]      = OpCeq;
   correspondingTerms[NotEq]      = OpCne;
   correspondingTerms[BitwiseAnd] = OpBand;
+  correspondingTerms[And]        = OpAnd;
   correspondingTerms[Assigne]    = OpCpy;
 };
 
@@ -449,7 +453,7 @@ typedef struct precedence {
   int level;
 } Precedence;
 
-#define N_OPERATORS 14
+#define N_OPERATORS 15
 
 Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
   { // Prefix
@@ -471,6 +475,7 @@ Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
     {Equal, 8},
     {NotEq, 8},
     {BitwiseAnd, 9},
+    {And, 12},
     {Assigne, 15},
     {.level = LOWEST_PRECEDENCE + 1}
   }
@@ -564,6 +569,7 @@ int evalExpression(int precedenceLevel)
       case Les: case LesEq: case Gtr: case GtrEq:
       case Equal: case NotEq:
       case BitwiseAnd:
+      case And:
         er = evalInfixExpression(er, encountered - 1, getOpcode(tokenCode));
         break;
       // 右結合
@@ -853,6 +859,7 @@ void exec()
     case OpCeq:    *icp[1] = *icp[2] == *icp[3]; icp += 5; continue;
     case OpCne:    *icp[1] = *icp[2] != *icp[3]; icp += 5; continue;
     case OpBand:   *icp[1] = *icp[2] &  *icp[3]; icp += 5; continue;
+    case OpAnd:    *icp[1] = *icp[2] && *icp[3]; icp += 5; continue;
     case OpCpy:    *icp[1] = *icp[2];            icp += 5; continue;
     case OpPrint:
       i = *icp[1];
