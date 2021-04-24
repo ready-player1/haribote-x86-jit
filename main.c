@@ -763,6 +763,14 @@ int compile(String sourceCode)
       int *loopBlock = &blockInfo[loopDepth];
       putIc(OpGoto, &vars[loopBlock[ForBreak]], 0, 0, 0);
     }
+    else if (match(18, "if (!!**0) continue;", pc) && loopDepth > 0) {
+      IntPtr loopBlock = &blockInfo[loopDepth];
+      ifgoto(0, WhenConditionIsTrue, loopBlock[ForContinue]);
+    }
+    else if (match(19, "if (!!**0) break;", pc) && loopDepth > 0) {
+      IntPtr loopBlock = &blockInfo[loopDepth];
+      ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
