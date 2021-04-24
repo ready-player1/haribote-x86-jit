@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
+#include <limits.h>
 
 typedef unsigned char *String;
 
@@ -34,7 +36,7 @@ String tokenStrs[ MAX_TOKEN_CODE + 1 ]; // 添字に指定したトークンコ�
 int    tokenLens[ MAX_TOKEN_CODE + 1 ]; // トークン文字列の長さを格納する
 unsigned char tokenBuf[ (MAX_TOKEN_CODE + 1) * 10 ]; // トークン文字列の実体を格納する
 
-int vars[ MAX_TOKEN_CODE + 1 ]; // 変数
+intptr_t vars[ MAX_TOKEN_CODE + 1 ]; // 変数
 
 int getTokenCode(String str, int len)
 {
@@ -57,6 +59,16 @@ int getTokenCode(String str, int len)
     unusedHead += len + 1;
     ++nTokens;
     vars[i] = strtol(tokenStrs[i], NULL, 0); // 定数だった場合に初期値を設定（定数ではないときは0になる）
+    if (tokenStrs[i][0] == '"') {
+      char *p = malloc(len - 1);
+      if (p == NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+      vars[i] = (intptr_t) p;
+      memcpy(p, tokenStrs[i] + 1, len - 2); // 手抜き実装（エスケープシーケンスを処理していない）
+      p[len - 2] = 0;
+    }
   }
   return i;
 }
@@ -90,6 +102,13 @@ int lexer(String str, int *tokenCodes)
     }
     else if (strchr("=+-*/!%&~|<>?:.#", str[pos]) != NULL) {
       while (strchr("=+-*/!%&~|<>?:.#", str[pos + len]) != NULL && str[pos + len] != 0)
+        ++len;
+    }
+    else if (str[pos] == '"') { // "文字列"
+      len = 1;
+      while (str[pos + len] != str[pos] && str[pos + len] >= ' ')
+        ++len;
+      if (str[pos + len] == str[pos])
         ++len;
     }
     else {
@@ -163,6 +182,7 @@ enum keyId {
   For,
   Continue,
   Break,
+  Prints,
 
   EndOfKeys
 };
@@ -226,6 +246,7 @@ String defaultTokens[] = {
   "for",
   "continue",
   "break",
+  "prints",
 };
 
 void initTokenCodes(String *defaultTokens, int len)
@@ -312,7 +333,7 @@ int match(int phraseId, String phrase, int pc)
   return 1; // マッチした
 }
 
-typedef int *IntPtr;
+typedef intptr_t *IntPtr;
 
 IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
 IntPtr *icp;
@@ -344,6 +365,7 @@ enum opcode {
   OpLop,
   OpPrint,
   OpTime,
+  OpPrints,
   OpEnd
 };
 
@@ -771,6 +793,10 @@ int compile(String sourceCode)
       int *loopBlock = &blockInfo[loopDepth];
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
+    else if (match(20, "prints !!**0;", pc)) {
+      e0 = expression(0);
+      putIc(OpPrints, &vars[e0], 0, 0, 0);
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
@@ -829,7 +855,12 @@ void exec()
     case OpBand:   *icp[1] = *icp[2] &  *icp[3]; icp += 5; continue;
     case OpCpy:    *icp[1] = *icp[2];            icp += 5; continue;
     case OpPrint:
-      printf("%d\n", *icp[1]);
+      i = *icp[1];
+      if (i < INT_MIN || INT_MAX < i) {
+        printf("outside the range of representable values of type 'int'\n");
+        exit(1);
+      }
+      printf("%d\n", (int) i);
       icp += 5;
       continue;
     case OpGoto:                            icp = (IntPtr *) icp[1]; continue;
@@ -853,6 +884,10 @@ void exec()
         icp = (IntPtr *) icp[1];
         continue;
       }
+      icp += 5;
+      continue;
+    case OpPrints:
+      printf("%s\n", (char *) *icp[1]);
       icp += 5;
       continue;
     }
