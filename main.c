@@ -807,6 +807,37 @@ int compile(String sourceCode)
       e0 = expression(0);
       putIc(OpPrints, &vars[e0], 0, 0, 0);
     }
+    else if (match(21, "int !!*0[!!**2];", pc)) {
+      e2 = expression(2);
+      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+    }
+    else if (match(22, "int !!*0[!!**2] = {", pc)) {
+      e2 = expression(2);
+      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+
+      int pc, nElems = 0;
+      for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
+        if (pc >= nTokens)
+          goto err;
+        if (tc[pc] != Comma)
+          ++nElems;
+      }
+      intptr_t *ary = malloc(nElems * sizeof(intptr_t));
+      if (ary == NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+
+      nElems = 0;
+      for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
+        if (tc[pc] == Comma)
+          continue;
+        ary[nElems] = vars[tc[pc]];
+        ++nElems;
+      }
+      putIc(OpAryInit, &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, 0);
+      nextPc = pc + 2; // } と ; の分
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
