@@ -369,6 +369,10 @@ enum opcode {
   OpPrint,
   OpTime,
   OpPrints,
+  OpAryNew,
+  OpAryInit,
+  OpArySet,
+  OpAryGet,
   OpEnd
 };
 
@@ -841,6 +845,7 @@ void exec()
 {
   clock_t t0 = clock();
   icp = internalCodes;
+  IntPtr ary;
   int i;
   for (;;) {
     switch ((int) icp[0]) {
@@ -895,6 +900,29 @@ void exec()
       continue;
     case OpPrints:
       printf("%s\n", (char *) *icp[1]);
+      icp += 5;
+      continue;
+    case OpAryNew:
+      *icp[1] = (intptr_t) malloc(*icp[2] * sizeof(intptr_t));
+      if (*icp[1] == (intptr_t) NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+      memset((char *) *icp[1], 0, *icp[2] * sizeof(intptr_t));
+      icp += 5;
+      continue;
+    case OpAryInit:
+      memcpy((char *) *icp[1], (char *) icp[2], ((int) icp[3]) * sizeof(intptr_t));
+      icp += 5;
+      continue;
+    case OpArySet:
+      ary = (intptr_t *) *icp[1];
+      ary[ *icp[2] ] = *icp[3];
+      icp += 5;
+      continue;
+    case OpAryGet:
+      ary = (intptr_t *) *icp[1];
+      *icp[3] = ary[ *icp[2] ];
       icp += 5;
       continue;
     }
