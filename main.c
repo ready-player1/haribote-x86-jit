@@ -127,6 +127,7 @@ enum keyId {
   WildCard = 0,
   WildCardForExpr,
   WildCardForExpr0,
+
   Tmp0,
   Tmp1,
   Tmp2,
@@ -137,32 +138,36 @@ enum keyId {
   Tmp7,
   Tmp8,
   Tmp9,
+
   PlusPlus,
-  ShiftRight,
-  And,
+
   Equal,
   NotEq,
   Les,
   GtrEq,
   LesEq,
   Gtr,
-  Colon,
+  Plus,
+  Minus,
+  Multi,
+  Divi,
+  Mod,
+  BitwiseAnd,
+  ShiftRight,
+  And,
+
+  Assigne,
+
   Lparen,
   Rparen,
   Lbracket,
   Rbracket,
   Lbrace,
   Rbrace,
-  Plus,
-  Minus,
-  Multi,
-  Divi,
-  Mod,
   Period,
   Comma,
   Semicolon,
-  Assigne,
-  BitwiseAnd,
+  Colon,
 
   Zero,
   One,
@@ -192,6 +197,7 @@ String defaultTokens[] = {
   "!!*",
   "!!**",
   "!!***",
+
   "_t0",
   "_t1",
   "_t2",
@@ -202,32 +208,36 @@ String defaultTokens[] = {
   "_t7",
   "_t8",
   "_t9",
+
   "++",
-  ">>",
-  "&&",
+
   "==",
   "!=",
   "<",
   ">=",
   "<=",
   ">",
-  ":",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "&",
+  ">>",
+  "&&",
+
+  "=",
+
   "(",
   ")",
   "[",
   "]",
   "{",
   "}",
-  "+",
-  "-",
-  "*",
-  "/",
-  "%",
   ".",
   ",",
   ";",
-  "=",
-  "&",
+  ":",
 
   "0",
   "1",
@@ -348,7 +358,6 @@ enum opcode {
   OpCge,
   OpCle,
   OpCgt,
-  OpAnd,
   OpAdd,
   OpSub,
   OpMul,
@@ -356,6 +365,7 @@ enum opcode {
   OpMod,
   OpBand,
   OpShr,
+  OpAnd,
   OpAdd1,
   OpNeg,
   OpGoto,
@@ -558,7 +568,7 @@ int evalExpression(int precedenceLevel)
       putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
       putIc(OpAdd1, &vars[e0], 0, 0, 0);
     }
-    else if (phraseCompare(70, "[!!**0]", epc)) { // 配列の添字演算子式
+    else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
       int op;
       e1 = er;
       e0 = expression(0);
@@ -713,11 +723,8 @@ int compile(String sourceCode)
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
       putIc(OpAdd1, &vars[tc[wpc[0]]], 0, 0, 0);
     }
-    else if (match(2, "!!*0 = !!*1 + !!*2;", pc)) {
-      putIc(OpAdd, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
-    }
-    else if (match(3, "!!*0 = !!*1 - !!*2;", pc)) {
-      putIc(OpSub, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
+    else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
+      putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
       e0 = expression(0);
