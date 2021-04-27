@@ -514,7 +514,7 @@ int evalInfixExpression(int i, int precedenceLevel, int op)
 int evalExpression(int precedenceLevel)
 {
   int er = -1; // ここまでの計算結果が入っている変数のトークンコード（vars[er]で計算結果にアクセスできる）
-  int e0 = 0;
+  int e0 = 0, e1 = 0;
 
   nextPc = 0;
 
@@ -543,12 +543,13 @@ int evalExpression(int precedenceLevel)
   int tokenCode;
   for (;;) {
     tmpFree(e0);
-    if (er < 0 || e0 < 0) // ここまででエラーがあれば、処理を打ち切り
+    tmpFree(e1);
+    if (er < 0 || e0 < 0 || e1 < 0) // ここまででエラーがあれば、処理を打ち切り
       return -1;
     if (epc >= epcEnd)
       break;
 
-    e0 = 0;
+    e0 = e1 = 0;
     tokenCode = tokenCodes[epc];
     if (tokenCode == PlusPlus) { // 後置インクリメント
       ++epc;
@@ -556,6 +557,22 @@ int evalExpression(int precedenceLevel)
       er = tmpAlloc();
       putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
       putIc(OpAdd1, &vars[e0], 0, 0, 0);
+    }
+    else if (phraseCompare(70, "[!!**0]", epc)) { // 配列の添字演算子式
+      int op;
+      e1 = er;
+      e0 = expression(0);
+      epc = nextPc;
+      if (tokenCodes[epc] == Assigne && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assigne)))) {
+        op = OpArySet;
+        ++epc;
+        er = evalExpression(encountered);
+      }
+      else {
+        op = OpAryGet;
+        er = tmpAlloc();
+      }
+      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
