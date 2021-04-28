@@ -383,6 +383,7 @@ enum opcode {
   OpAryInit,
   OpArySet,
   OpAryGet,
+  OpPrm,
   OpEnd
 };
 
@@ -694,6 +695,29 @@ enum blockType { IfBlock = 1, ForBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
 enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
+// lenで渡した数の式を評価し、その結果を使ってputIcをする
+int exprPutIc(int er, int len, int op, int *err)
+{
+  int e[9] = {0};
+  int hasTmpAlloced = 0;
+  if (er != 0) {
+    er = e[0] = tmpAlloc();
+    hasTmpAlloced = 1;
+  }
+  for (int i = hasTmpAlloced; i < len; ++i) {
+    if ((e[i] = expression(i)) < 0)
+      *err = -1;
+  }
+
+  putIc(op, &vars[e[0]], &vars[e[1]], &vars[e[2]], &vars[e[3]]);
+  if (len > 4)
+    putIc(OpPrm, &vars[e[4]], &vars[e[5]], &vars[e[6]], &vars[e[7]]);
+
+  for (int i = hasTmpAlloced; i < len; ++i)
+    tmpFree(e[i]);
+  return er;
+}
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
@@ -727,8 +751,7 @@ int compile(String sourceCode)
       putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
-      e0 = expression(0);
-      putIc(OpPrint, &vars[e0], 0, 0, 0);
+      exprPutIc(0, 1, OpPrint, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
       vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
@@ -828,8 +851,7 @@ int compile(String sourceCode)
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
     else if (match(20, "prints !!**0;", pc)) {
-      e0 = expression(0);
-      putIc(OpPrints, &vars[e0], 0, 0, 0);
+      exprPutIc(0, 1, OpPrints, &e0);
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
@@ -980,6 +1002,9 @@ void exec()
       *icp[3] = ary[ *icp[2] ];
       icp += 5;
       continue;
+    case OpPrm:
+      printf("should not reach here!\n");
+      exit(1);
     }
   }
 }
