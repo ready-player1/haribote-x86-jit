@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
+#include <limits.h>
 
 typedef unsigned char *String;
 
@@ -34,7 +36,7 @@ String tokenStrs[ MAX_TOKEN_CODE + 1 ]; // 添字に指定したトークンコ�
 int    tokenLens[ MAX_TOKEN_CODE + 1 ]; // トークン文字列の長さを格納する
 unsigned char tokenBuf[ (MAX_TOKEN_CODE + 1) * 10 ]; // トークン文字列の実体を格納する
 
-int vars[ MAX_TOKEN_CODE + 1 ]; // 変数
+intptr_t vars[ MAX_TOKEN_CODE + 1 ]; // 変数
 
 int getTokenCode(String str, int len)
 {
@@ -57,6 +59,16 @@ int getTokenCode(String str, int len)
     unusedHead += len + 1;
     ++nTokens;
     vars[i] = strtol(tokenStrs[i], NULL, 0); // 定数だった場合に初期値を設定（定数ではないときは0になる）
+    if (tokenStrs[i][0] == '"') {
+      char *p = malloc(len - 1);
+      if (p == NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+      vars[i] = (intptr_t) p;
+      memcpy(p, tokenStrs[i] + 1, len - 2); // 手抜き実装（エスケープシーケンスを処理していない）
+      p[len - 2] = 0;
+    }
   }
   return i;
 }
@@ -92,6 +104,13 @@ int lexer(String str, int *tokenCodes)
       while (strchr("=+-*/!%&~|<>?:.#", str[pos + len]) != NULL && str[pos + len] != 0)
         ++len;
     }
+    else if (str[pos] == '"') { // "文字列"
+      len = 1;
+      while (str[pos + len] != str[pos] && str[pos + len] >= ' ')
+        ++len;
+      if (str[pos + len] == str[pos])
+        ++len;
+    }
     else {
       printf("syntax error: %.10s\n", &str[pos]);
       exit(1);
@@ -108,6 +127,7 @@ enum keyId {
   WildCard = 0,
   WildCardForExpr,
   WildCardForExpr0,
+
   Tmp0,
   Tmp1,
   Tmp2,
@@ -118,31 +138,36 @@ enum keyId {
   Tmp7,
   Tmp8,
   Tmp9,
+
   PlusPlus,
-  ShiftRight,
+
   Equal,
   NotEq,
   Les,
   GtrEq,
   LesEq,
   Gtr,
-  Colon,
+  Plus,
+  Minus,
+  Multi,
+  Divi,
+  Mod,
+  BitwiseAnd,
+  ShiftRight,
+  And,
+
+  Assigne,
+
   Lparen,
   Rparen,
   Lbracket,
   Rbracket,
   Lbrace,
   Rbrace,
-  Plus,
-  Minus,
-  Multi,
-  Divi,
-  Mod,
   Period,
   Comma,
   Semicolon,
-  Assigne,
-  BitwiseAnd,
+  Colon,
 
   Zero,
   One,
@@ -163,6 +188,7 @@ enum keyId {
   For,
   Continue,
   Break,
+  Prints,
 
   EndOfKeys
 };
@@ -171,6 +197,7 @@ String defaultTokens[] = {
   "!!*",
   "!!**",
   "!!***",
+
   "_t0",
   "_t1",
   "_t2",
@@ -181,31 +208,36 @@ String defaultTokens[] = {
   "_t7",
   "_t8",
   "_t9",
+
   "++",
-  ">>",
+
   "==",
   "!=",
   "<",
   ">=",
   "<=",
   ">",
-  ":",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "&",
+  ">>",
+  "&&",
+
+  "=",
+
   "(",
   ")",
   "[",
   "]",
   "{",
   "}",
-  "+",
-  "-",
-  "*",
-  "/",
-  "%",
   ".",
   ",",
   ";",
-  "=",
-  "&",
+  ":",
 
   "0",
   "1",
@@ -226,6 +258,7 @@ String defaultTokens[] = {
   "for",
   "continue",
   "break",
+  "prints",
 };
 
 void initTokenCodes(String *defaultTokens, int len)
@@ -312,7 +345,7 @@ int match(int phraseId, String phrase, int pc)
   return 1; // マッチした
 }
 
-typedef int *IntPtr;
+typedef intptr_t *IntPtr;
 
 IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
 IntPtr *icp;
@@ -332,6 +365,7 @@ enum opcode {
   OpMod,
   OpBand,
   OpShr,
+  OpAnd,
   OpAdd1,
   OpNeg,
   OpGoto,
@@ -344,6 +378,11 @@ enum opcode {
   OpLop,
   OpPrint,
   OpTime,
+  OpPrints,
+  OpAryNew,
+  OpAryInit,
+  OpArySet,
+  OpAryGet,
   OpEnd
 };
 
@@ -363,6 +402,7 @@ void initCorrespondingTerms() {
   correspondingTerms[Equal]      = OpCeq;
   correspondingTerms[NotEq]      = OpCne;
   correspondingTerms[BitwiseAnd] = OpBand;
+  correspondingTerms[And]        = OpAnd;
   correspondingTerms[Assigne]    = OpCpy;
 };
 
@@ -427,7 +467,7 @@ typedef struct precedence {
   int level;
 } Precedence;
 
-#define N_OPERATORS 14
+#define N_OPERATORS 15
 
 Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
   { // Prefix
@@ -449,6 +489,7 @@ Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
     {Equal, 8},
     {NotEq, 8},
     {BitwiseAnd, 9},
+    {And, 12},
     {Assigne, 15},
     {.level = LOWEST_PRECEDENCE + 1}
   }
@@ -483,7 +524,7 @@ int evalInfixExpression(int i, int precedenceLevel, int op)
 int evalExpression(int precedenceLevel)
 {
   int er = -1; // ここまでの計算結果が入っている変数のトークンコード（vars[er]で計算結果にアクセスできる）
-  int e0 = 0;
+  int e0 = 0, e1 = 0;
 
   nextPc = 0;
 
@@ -512,12 +553,13 @@ int evalExpression(int precedenceLevel)
   int tokenCode;
   for (;;) {
     tmpFree(e0);
-    if (er < 0 || e0 < 0) // ここまででエラーがあれば、処理を打ち切り
+    tmpFree(e1);
+    if (er < 0 || e0 < 0 || e1 < 0) // ここまででエラーがあれば、処理を打ち切り
       return -1;
     if (epc >= epcEnd)
       break;
 
-    e0 = 0;
+    e0 = e1 = 0;
     tokenCode = tokenCodes[epc];
     if (tokenCode == PlusPlus) { // 後置インクリメント
       ++epc;
@@ -525,6 +567,22 @@ int evalExpression(int precedenceLevel)
       er = tmpAlloc();
       putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
       putIc(OpAdd1, &vars[e0], 0, 0, 0);
+    }
+    else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
+      int op;
+      e1 = er;
+      e0 = expression(0);
+      epc = nextPc;
+      if (tokenCodes[epc] == Assigne && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assigne)))) {
+        op = OpArySet;
+        ++epc;
+        er = evalExpression(encountered);
+      }
+      else {
+        op = OpAryGet;
+        er = tmpAlloc();
+      }
+      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
@@ -542,6 +600,7 @@ int evalExpression(int precedenceLevel)
       case Les: case LesEq: case Gtr: case GtrEq:
       case Equal: case NotEq:
       case BitwiseAnd:
+      case And:
         er = evalInfixExpression(er, encountered - 1, getOpcode(tokenCode));
         break;
       // 右結合
@@ -664,11 +723,8 @@ int compile(String sourceCode)
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
       putIc(OpAdd1, &vars[tc[wpc[0]]], 0, 0, 0);
     }
-    else if (match(2, "!!*0 = !!*1 + !!*2;", pc)) {
-      putIc(OpAdd, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
-    }
-    else if (match(3, "!!*0 = !!*1 - !!*2;", pc)) {
-      putIc(OpSub, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[2]]], 0);
+    else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
+      putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
       e0 = expression(0);
@@ -771,6 +827,41 @@ int compile(String sourceCode)
       int *loopBlock = &blockInfo[loopDepth];
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
+    else if (match(20, "prints !!**0;", pc)) {
+      e0 = expression(0);
+      putIc(OpPrints, &vars[e0], 0, 0, 0);
+    }
+    else if (match(21, "int !!*0[!!**2];", pc)) {
+      e2 = expression(2);
+      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+    }
+    else if (match(22, "int !!*0[!!**2] = {", pc)) {
+      e2 = expression(2);
+      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+
+      int pc, nElems = 0;
+      for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
+        if (pc >= nTokens)
+          goto err;
+        if (tc[pc] != Comma)
+          ++nElems;
+      }
+      intptr_t *ary = malloc(nElems * sizeof(intptr_t));
+      if (ary == NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+
+      nElems = 0;
+      for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
+        if (tc[pc] == Comma)
+          continue;
+        ary[nElems] = vars[tc[pc]];
+        ++nElems;
+      }
+      putIc(OpAryInit, &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, 0);
+      nextPc = pc + 2; // } と ; の分
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
@@ -809,6 +900,7 @@ void exec()
 {
   clock_t t0 = clock();
   icp = internalCodes;
+  IntPtr ary;
   int i;
   for (;;) {
     switch ((int) icp[0]) {
@@ -827,9 +919,15 @@ void exec()
     case OpCeq:    *icp[1] = *icp[2] == *icp[3]; icp += 5; continue;
     case OpCne:    *icp[1] = *icp[2] != *icp[3]; icp += 5; continue;
     case OpBand:   *icp[1] = *icp[2] &  *icp[3]; icp += 5; continue;
+    case OpAnd:    *icp[1] = *icp[2] && *icp[3]; icp += 5; continue;
     case OpCpy:    *icp[1] = *icp[2];            icp += 5; continue;
     case OpPrint:
-      printf("%d\n", *icp[1]);
+      i = *icp[1];
+      if (i < INT_MIN || INT_MAX < i) {
+        printf("outside the range of representable values of type 'int'\n");
+        exit(1);
+      }
+      printf("%d\n", (int) i);
       icp += 5;
       continue;
     case OpGoto:                            icp = (IntPtr *) icp[1]; continue;
@@ -853,6 +951,33 @@ void exec()
         icp = (IntPtr *) icp[1];
         continue;
       }
+      icp += 5;
+      continue;
+    case OpPrints:
+      printf("%s\n", (char *) *icp[1]);
+      icp += 5;
+      continue;
+    case OpAryNew:
+      *icp[1] = (intptr_t) malloc(*icp[2] * sizeof(intptr_t));
+      if (*icp[1] == (intptr_t) NULL) {
+        printf("failed to allocate memory\n");
+        exit(1);
+      }
+      memset((char *) *icp[1], 0, *icp[2] * sizeof(intptr_t));
+      icp += 5;
+      continue;
+    case OpAryInit:
+      memcpy((char *) *icp[1], (char *) icp[2], ((int) icp[3]) * sizeof(intptr_t));
+      icp += 5;
+      continue;
+    case OpArySet:
+      ary = (intptr_t *) *icp[1];
+      ary[ *icp[2] ] = *icp[3];
+      icp += 5;
+      continue;
+    case OpAryGet:
+      ary = (intptr_t *) *icp[1];
+      *icp[3] = ary[ *icp[2] ];
       icp += 5;
       continue;
     }
