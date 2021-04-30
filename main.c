@@ -735,7 +735,7 @@ int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth, loopDepth;
 */
 
 #define BLOCK_TYPE 0
-enum blockType { IfBlock = 1, ForBlock };
+enum blockType { IfBlock = 1, ForBlock, MainFnBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
 enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
@@ -945,6 +945,25 @@ int compile(String sourceCode)
     }
     else if (match(28, "bitblt(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
       exprPutIc(0, 5, OpBitBlt, &e0);
+    }
+    else if (match(29, "printTime();", pc)) { // time;と同じ（C言語っぽく書けるようにした）
+      exprPutIc(0, 0, OpTime, &e0);
+    }
+    else if (match(30, "void aMain() {", pc)) {
+      blockDepth += BLOCK_INFO_UNIT_SIZE;
+      curBlock = &blockInfo[blockDepth];
+      curBlock[BLOCK_TYPE] = MainFnBlock; // ただ認識しているだけで何もしていない
+    }
+    else if (match(31, "}", pc) && curBlock[BLOCK_TYPE] == MainFnBlock) {
+      blockDepth -= BLOCK_INFO_UNIT_SIZE; // ただコードブロックを閉じているだけ
+    }
+    else if (match(32, "#", pc)) {
+      ;
+    }
+    else if (match(33, "int", pc) || match(34, "AWindow", pc)) {
+      while (tc[pc] != Semicolon)
+        ++pc;
+      nextPc = pc;
     }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
