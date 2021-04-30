@@ -111,6 +111,14 @@ int lexer(String str, int *tokenCodes)
       printf("syntax error: %.10s\n", &str[pos]);
       exit(1);
     }
+    if (strncmp(&str[pos], "//", 2) == 0) {
+comment:
+      while (str[pos] != 0 && str[pos] != '\n')
+        ++pos;
+      continue;
+    }
+    if (len == 7 && strncmp(&str[pos], "include", 7) == 0) // includeを無視する
+      goto comment;
     tokenCodes[nTokens] = getTokenCode(&str[pos], len);
     pos += len;
     ++nTokens;
