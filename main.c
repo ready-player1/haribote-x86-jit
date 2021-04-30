@@ -1,8 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <stdint.h>
+#include <acl.c>
 #include <limits.h>
 
 typedef unsigned char *String;
@@ -36,7 +32,7 @@ String tokenStrs[ MAX_TOKEN_CODE + 1 ]; // 添字に指定したトークンコ�
 int    tokenLens[ MAX_TOKEN_CODE + 1 ]; // トークン文字列の長さを格納する
 unsigned char tokenBuf[ (MAX_TOKEN_CODE + 1) * 10 ]; // トークン文字列の実体を格納する
 
-intptr_t vars[ MAX_TOKEN_CODE + 1 ]; // 変数
+AInt vars[ MAX_TOKEN_CODE + 1 ]; // 変数
 
 int getTokenCode(String str, int len)
 {
@@ -65,7 +61,7 @@ int getTokenCode(String str, int len)
         printf("failed to allocate memory\n");
         exit(1);
       }
-      vars[i] = (intptr_t) p;
+      vars[i] = (AInt) p;
       memcpy(p, tokenStrs[i] + 1, len - 2); // 手抜き実装（エスケープシーケンスを処理していない）
       p[len - 2] = 0;
     }
@@ -345,7 +341,7 @@ int match(int phraseId, String phrase, int pc)
   return 1; // マッチした
 }
 
-typedef intptr_t *IntPtr;
+typedef AInt *IntPtr;
 
 IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
 IntPtr *icp;
@@ -383,6 +379,21 @@ enum opcode {
   OpAryInit,
   OpArySet,
   OpAryGet,
+  OpPrm,
+  OpOpnWin,
+  OpSetPix0,
+  OpM64s,
+  OpRgb8,
+  OpWait,
+  OpXorShift,
+  OpGetPix,
+  OpFilRct0,
+  OpF16Sin,
+  OpF16Cos,
+  OpInkey,
+  OpDrwStr0,
+  OpGprDec,
+  OpBitBlt,
   OpEnd
 };
 
@@ -459,6 +470,7 @@ int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを
 
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
+int exprPutIc(int er, int len, int op, int *err);
 
 enum notationStyle { Prefix = 0, Infix };
 
@@ -541,6 +553,31 @@ int evalExpression(int precedenceLevel)
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
     er = tmpAlloc();
     putIc(OpNeg, &vars[er], &vars[e0], 0, 0);
+  }
+  else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
+    er = exprPutIc(er, 4, OpM64s, &e0);
+  }
+  else if (match(72, "aRgb8(!!**1, !!**2, !!**3)", epc)) {
+    er = exprPutIc(er, 4, OpRgb8, &e0);
+  }
+  else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
+    exprPutIc(0, 3, OpOpnWin, &e0);
+    er = Zero;
+  }
+  else if (match(74, "aXorShift32()", epc)) {
+    er = exprPutIc(er, 1, OpXorShift, &e0);
+  }
+  else if (match(75, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
+    er = exprPutIc(er, 3, OpGetPix, &e0);
+  }
+  else if (match(76, "ff16sin(!!**1)", epc)) {
+    er = exprPutIc(er, 2, OpF16Sin, &e0);
+  }
+  else if (match(77, "ff16cos(!!**1)", epc)) {
+    er = exprPutIc(er, 2, OpF16Cos, &e0);
+  }
+  else if (match(78, "aInkey(!!***8 , !!**1)", epc)) {
+    er = exprPutIc(er, 2, OpInkey, &e0);
   }
   else { // 変数もしくは定数
     er = tokenCodes[epc];
@@ -694,6 +731,29 @@ enum blockType { IfBlock = 1, ForBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
 enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
+// lenで渡した数の式を評価し、その結果を使ってputIcをする
+int exprPutIc(int er, int len, int op, int *err)
+{
+  int e[9] = {0};
+  int hasTmpAlloced = 0;
+  if (er != 0) {
+    er = e[0] = tmpAlloc();
+    hasTmpAlloced = 1;
+  }
+  for (int i = hasTmpAlloced; i < len; ++i) {
+    if ((e[i] = expression(i)) < 0)
+      *err = -1;
+  }
+
+  putIc(op, &vars[e[0]], &vars[e[1]], &vars[e[2]], &vars[e[3]]);
+  if (len > 4)
+    putIc(OpPrm, &vars[e[4]], &vars[e[5]], &vars[e[6]], &vars[e[7]]);
+
+  for (int i = hasTmpAlloced; i < len; ++i)
+    tmpFree(e[i]);
+  return er;
+}
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
@@ -727,8 +787,7 @@ int compile(String sourceCode)
       putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
-      e0 = expression(0);
-      putIc(OpPrint, &vars[e0], 0, 0, 0);
+      exprPutIc(0, 1, OpPrint, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
       vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
@@ -828,8 +887,7 @@ int compile(String sourceCode)
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
     else if (match(20, "prints !!**0;", pc)) {
-      e0 = expression(0);
-      putIc(OpPrints, &vars[e0], 0, 0, 0);
+      exprPutIc(0, 1, OpPrints, &e0);
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
@@ -846,7 +904,7 @@ int compile(String sourceCode)
         if (tc[pc] != Comma)
           ++nElems;
       }
-      intptr_t *ary = malloc(nElems * sizeof(intptr_t));
+      AInt *ary = malloc(nElems * sizeof(AInt));
       if (ary == NULL) {
         printf("failed to allocate memory\n");
         exit(1);
@@ -861,6 +919,24 @@ int compile(String sourceCode)
       }
       putIc(OpAryInit, &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, 0);
       nextPc = pc + 2; // } と ; の分
+    }
+    else if (match(23, "aSetPix0(!!***8, !!**0, !!**1, !!**2);", pc)) {
+      exprPutIc(0, 3, OpSetPix0, &e0);
+    }
+    else if (match(24, "aWait(!!**0);", pc)) {
+      exprPutIc(0, 1, OpWait, &e0);
+    }
+    else if (match(25, "aFillRect0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
+      exprPutIc(0, 5, OpFilRct0, &e0);
+    }
+    else if (match(26, "aDrawStr0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
+      exprPutIc(0, 5, OpDrwStr0, &e0);
+    }
+    else if (match(27, "gprintDec(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4, !!**5);", pc)) {
+      exprPutIc(0, 6, OpGprDec, &e0);
+    }
+    else if (match(28, "bitblt(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
+      exprPutIc(0, 5, OpBitBlt, &e0);
     }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
@@ -896,12 +972,16 @@ err:
   return -1;
 }
 
+AWindow *win;
+
 void exec()
 {
   clock_t t0 = clock();
   icp = internalCodes;
   IntPtr ary;
-  int i;
+  AInt i, j, sx, sy;
+  AInt32 *p32;
+  char str[100];
   for (;;) {
     switch ((int) icp[0]) {
     case OpNeg:    *icp[1] = -*icp[2];           icp += 5; continue;
@@ -942,6 +1022,8 @@ void exec()
       icp += 5;
       continue;
     case OpEnd:
+      if (win != NULL)
+        aFlushAll(win);
       return;
     case OpLop:
       i = *icp[2];
@@ -958,27 +1040,108 @@ void exec()
       icp += 5;
       continue;
     case OpAryNew:
-      *icp[1] = (intptr_t) malloc(*icp[2] * sizeof(intptr_t));
-      if (*icp[1] == (intptr_t) NULL) {
+      *icp[1] = (AInt) malloc(*icp[2] * sizeof(AInt));
+      if (*icp[1] == (AInt) NULL) {
         printf("failed to allocate memory\n");
         exit(1);
       }
-      memset((char *) *icp[1], 0, *icp[2] * sizeof(intptr_t));
+      memset((char *) *icp[1], 0, *icp[2] * sizeof(AInt));
       icp += 5;
       continue;
     case OpAryInit:
-      memcpy((char *) *icp[1], (char *) icp[2], ((int) icp[3]) * sizeof(intptr_t));
+      memcpy((char *) *icp[1], (char *) icp[2], ((int) icp[3]) * sizeof(AInt));
       icp += 5;
       continue;
     case OpArySet:
-      ary = (intptr_t *) *icp[1];
+      ary = (AInt *) *icp[1];
       ary[ *icp[2] ] = *icp[3];
       icp += 5;
       continue;
     case OpAryGet:
-      ary = (intptr_t *) *icp[1];
+      ary = (AInt *) *icp[1];
       *icp[3] = ary[ *icp[2] ];
       icp += 5;
+      continue;
+    case OpPrm:
+      printf("should not reach here!\n");
+      exit(1);
+    case OpOpnWin:
+      if (win != NULL) {
+        if (win->xsiz < *icp[1] || win->ysiz < *icp[2]) {
+          printf("openWin error\n");
+          return;
+        }
+      }
+      else
+        win = aOpenWin(*icp[1], *icp[2], (char *) *icp[3], 0);
+      icp += 5;
+      continue;
+    case OpSetPix0:
+      aSetPix0(win, *icp[1], *icp[2], *icp[3]);
+      icp += 5;
+      continue;
+    case OpM64s:
+      *icp[1] = (((AInt64) *icp[2]) * ((AInt64) *icp[3])) >> *icp[4];
+      icp += 5;
+      continue;
+    case OpRgb8:
+      *icp[1] = aRgb8(*icp[2], *icp[3], *icp[4]);
+      icp += 5;
+      continue;
+    case OpWait:
+      if (*icp[1] == -1) {
+        if (win != NULL)
+          aFlushAll(win);
+        return;
+      }
+      aWait(*icp[1]);
+      icp += 5;
+      continue;
+    case OpXorShift:
+      *icp[1] = aXorShift32();
+      icp += 5;
+      continue;
+    case OpGetPix:
+      *icp[1] = aGetPix(win, *icp[2], *icp[3]);
+      icp += 5;
+      continue;
+    case OpFilRct0:
+      aFillRect0(win, *icp[1], *icp[2], *icp[3], *icp[4], *icp[6]);
+      icp += 10;
+      continue;
+    case OpF16Sin:
+      *icp[1] = (AInt) (sin(*icp[2] * (2 * 3.14159265358979323 / 65536)) * 65536);
+      icp += 5;
+      continue;
+    case OpF16Cos:
+      *icp[1] = (AInt) (cos(*icp[2] * (2 * 3.14159265358979323 / 65536)) * 65536);
+      icp += 5;
+      continue;
+    case OpInkey:
+      *icp[1] = aInkey(win, *icp[2]);
+      icp += 5;
+      continue;
+    case OpDrwStr0:
+      aDrawStr0(win, *icp[1], *icp[2], *icp[3], *icp[4], (char *) *icp[6]);
+      icp += 10;
+      continue;
+    case OpGprDec:
+      sprintf(str, "%*d", *icp[3], *icp[7]);
+      aDrawStr0(win, *icp[1], *icp[2], *icp[4], *icp[6], str);
+      icp += 10;
+      continue;
+    case OpBitBlt:
+      ary = (AInt *) *icp[6];
+      p32 = &win->buf[ *icp[3] + *icp[4] * win->xsiz ];
+      sx = *icp[1];
+      sy = *icp[2];
+      for (j = 0; j < sy; ++j) {
+        for (i = 0; i < sx; ++i)
+          p32[i] = ary[i];
+        ary += sx;
+        p32 += win->xsiz;
+      }
+      icp += 10;
       continue;
     }
   }
@@ -992,15 +1155,15 @@ int run(String sourceCode)
   return 0;
 }
 
-int main(int argc, const char **argv)
+void aMain()
 {
   unsigned char text[10000]; // ソースコード
 
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
   initCorrespondingTerms();
 
-  if (argc >= 2) {
-    if (loadText((String) argv[1], text, 10000) != 0)
+  if (aArgc >= 2) {
+    if (loadText((String) aArgv[1], text, 10000) != 0)
       exit(1);
     run(text);
     exit(0);
