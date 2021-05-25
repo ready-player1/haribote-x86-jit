@@ -351,8 +351,8 @@ int match(int phraseId, String phrase, int pc)
 
 typedef AInt *IntPtr;
 
-IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
-IntPtr *icp;
+unsigned char *instructions;
+unsigned char *ip; // instruction pointer
 
 enum opcode {
   OpCpy = 0,
@@ -1005,14 +1005,29 @@ int run(String sourceCode)
 {
   if (compile(sourceCode) < 0)
     return 1;
+  void (*exec)() = (void (*)()) instructions;
   exec();
   return 0;
+}
+
+#include <unistd.h>
+#include <sys/mman.h>
+
+void *mallocRWX(int len)
+{
+  void *addr = mmap(0, len, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+  if (addr == MAP_FAILED) {
+    printf("mmap failed\n");
+    exit(1);
+  }
+  return addr;
 }
 
 void aMain()
 {
   unsigned char text[10000]; // ソースコード
 
+  instructions = mallocRWX(1024 * 1024);
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
   initCorrespondingTerms();
 
