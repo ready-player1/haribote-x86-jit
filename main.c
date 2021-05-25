@@ -442,12 +442,115 @@ int getOpcode(int tokenCode) // for infix operators
 
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
-  ip[0] = (IntPtr) op;
-  ip[1] = p1;
-  ip[2] = p2;
-  ip[3] = p3;
-  ip[4] = p4;
-  ip += 5;
+  printf("putIc function will be removed in a future version\n");
+  exit(1);
+}
+
+
+// 渡された文字が16進数に使える文字なら、それを0-15の数に変換して返す
+char getHex(char ch)
+{
+  return '0' <= ch && ch <= '9' ? ch - '0'
+       : 'a' <= ch && ch <= 'f' ? ch - 'a' + 10
+       : 'A' <= ch && ch <= 'F' ? ch - 'A' + 10
+       :                          -1
+       ;
+}
+
+unsigned get32(unsigned char *p)
+{
+  return p[0] + p[1] * 256 + p[2] * 65536 + p[3] * 16777216;
+}
+
+void put32(unsigned char *p, unsigned i)
+{
+  p[0] =  i        & 0xff; // 1バイト目に、ビット0～7の内容を書き込む
+  p[1] = (i >>  8) & 0xff; // 2バイト目に、ビット8～15の内容を書き込む
+  p[2] = (i >> 16) & 0xff; // 3バイト目に、ビット16～23の内容を書き込む
+  p[3] = (i >> 24) & 0xff; // 4バイト目に、ビット24～31の内容を書き込む
+}
+
+void decodeX86(String str, IntPtr *operands)
+{
+  for (int pos = 0; str[pos] != 0;) {
+    if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':' || str[pos] == ';')
+      ++pos;
+    else if (getHex(str[pos]) >= 0 && getHex(str[pos + 1]) >= 0) { // 16進数2桁（opcode）
+      *ip = ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]);
+      ++ip;
+      pos += 2;
+    }
+    else if (str[pos] == '%') {
+      int i = str[pos + 1] - '0'; // 参照する追加引数の番号
+
+      switch (str[pos + 2]) {
+      unsigned reg;
+      case 'm': // ModR/Mバイト
+        /*
+          ModR/Mバイトは、オペランドを参照する多くの命令でオペコードの次に置くことになっている1バイトで、
+          アドレッシングモードを指定するために使われる。ModR/Mバイトには、以下の3つの情報フィールドがある。
+
+          MSB                             LSB
+          mod (2bit) | reg (3bit) | r/m (3bit)
+
+          modフィールドは、r/mフィールドと組み合わせて、24個のアドレッシングモードと8個のレジスタをコード化する。
+          modフィールドは、次のようにr/mの用途を切り替える。
+
+          mod=00: [レジスタ+レジスタ]
+          mod=01: [レジスタ+disp8]
+          mod=10: [レジスタ+disp16/32]
+          mod=11: レジスタ
+
+          disp8/16/32はレジスタを指定する場合の変位（displacement）のことで、ベースアドレスに加算して
+          実効アドレスを生成する。
+
+          regフィールドは、レジスタ番号や追加オペコード情報を指定する。
+
+          r/mフィールドは、modフィールドと組み合わせて24個のアドレッシングモードと8個のレジスタをコード化する。
+
+          実効アドレスを得るために組み合わせるmodおよびr/mフィールドのコードと、regフィールドで指定する
+          レジスタ番号や追加オペコード情報の値は以下の資料に示されている。
+
+          『IA-32 インテル® アーキテクチャ・ソフトウェア・デベロッパーズ・マニュアル 中巻A：命令セット・リファレンスA-M』
+          2.6.ModR/MおよびSIBバイトのアドレス指定モードのコード化 > 表2-2.  ModR/Mバイトによる32ビット・アドレス指定形式
+          https://www.intel.co.jp/content/dam/www/public/ijkk/jp/ja/documents/developer/IA32_Arh_Dev_Man_Vol2A_i.pdf#G8.6121
+        */
+        reg = str[pos + 3] - '0';
+        *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
+        put32(ip + 1, (unsigned) operands[i]);
+        ip += 5;
+        pos += 4;
+        continue;
+      case 'i': // int
+        put32(ip, (unsigned) operands[i]);
+        ip += 4;
+        break;
+      case 'c': // char
+        put32(ip, (unsigned) operands[i]);
+        ++ip;
+        break;
+      case 'r': // relative -> 現在位置（次の命令の先頭位置）からの相対値を計算して4バイトを書く拡張命令
+        put32(ip, (unsigned) operands[i] - (unsigned) (ip + 4));
+        ip += 4;
+        break;
+      }
+      pos += 3;
+    }
+    else {
+      printf("decode error: '%s'\n", str);
+      exit(1);
+    }
+  }
+}
+
+void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3)
+{
+  IntPtr operands[4];
+  operands[0] = p0;
+  operands[1] = p1;
+  operands[2] = p2;
+  operands[3] = p3;
+  decodeX86(instructionStr, operands);
 }
 
 #define N_TMPS 10
@@ -742,24 +845,8 @@ enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, 
 // lenで渡した数の式を評価し、その結果を使ってputIcをする
 int exprPutIc(int er, int len, int op, int *err)
 {
-  int e[9] = {0};
-  int hasTmpAlloced = 0;
-  if (er != 0) {
-    er = e[0] = tmpAlloc();
-    hasTmpAlloced = 1;
-  }
-  for (int i = hasTmpAlloced; i < len; ++i) {
-    if ((e[i] = expression(i)) < 0)
-      *err = -1;
-  }
-
-  putIc(op, &vars[e[0]], &vars[e[1]], &vars[e[2]], &vars[e[3]]);
-  if (len > 4)
-    putIc(OpPrm, &vars[e[4]], &vars[e[5]], &vars[e[6]], &vars[e[7]]);
-
-  for (int i = hasTmpAlloced; i < len; ++i)
-    tmpFree(e[i]);
-  return er;
+  printf("exprPutIc function will be removed in a future version\n");
+  exit(1);
 }
 
 int compile(String sourceCode)
