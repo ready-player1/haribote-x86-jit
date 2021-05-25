@@ -442,12 +442,12 @@ int getOpcode(int tokenCode) // for infix operators
 
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
-  icp[0] = (IntPtr) op;
-  icp[1] = p1;
-  icp[2] = p2;
-  icp[3] = p3;
-  icp[4] = p4;
-  icp += 5;
+  ip[0] = (IntPtr) op;
+  ip[1] = p1;
+  ip[2] = p2;
+  ip[3] = p3;
+  ip[4] = p4;
+  ip += 5;
 }
 
 #define N_TMPS 10
@@ -662,7 +662,7 @@ int evalExpression(int precedenceLevel)
   return er;
 }
 
-// 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinternalCodes[]に書き込む
+// 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinstructions[]に書き込む
 int expression(int num)
 {
   int expressionBegin = wpc   [num];
@@ -771,7 +771,7 @@ int compile(String sourceCode)
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
-  icp = internalCodes;
+  ip = instructions;
 
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
@@ -798,7 +798,7 @@ int compile(String sourceCode)
       exprPutIc(0, 1, OpPrint, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
-      vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
+      vars[tc[wpc[0]]] = ip - instructions; // ラベル名の変数にその時のipの相対位置を入れておく
     }
     else if (match(5, "goto !!*0;", pc)) {
       putIc(OpGoto, &vars[tc[wpc[0]]], &vars[tc[wpc[0]]], 0, 0);
@@ -820,13 +820,13 @@ int compile(String sourceCode)
     else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
       putIc(OpGoto, &vars[curBlock[IfLabel1]], &vars[curBlock[IfLabel1]], 0, 0);
-      vars[curBlock[IfLabel0]] = icp - internalCodes;
+      vars[curBlock[IfLabel0]] = ip - instructions;
     }
     else if (match(13, "}", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       if (curBlock[IfLabel1] == 0)
-        vars[curBlock[IfLabel0]] = icp - internalCodes;
+        vars[curBlock[IfLabel0]] = ip - instructions;
       else
-        vars[curBlock[IfLabel1]] = icp - internalCodes;
+        vars[curBlock[IfLabel1]] = ip - instructions;
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
@@ -849,10 +849,10 @@ int compile(String sourceCode)
       e0 = expression(0);
       if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
         ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
-      vars[curBlock[ForBegin]] = icp - internalCodes;
+      vars[curBlock[ForBegin]] = ip - instructions;
     }
     else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
-      vars[curBlock[ForContinue]] = icp - internalCodes;
+      vars[curBlock[ForContinue]] = ip - instructions;
 
       int wpc1 = curBlock[ForWpc1];
       int wpc2 = curBlock[ForWpc2];
@@ -874,7 +874,7 @@ int compile(String sourceCode)
         else
           putIc(OpGoto, &vars[curBlock[ForBegin]], &vars[curBlock[ForBegin]], 0, 0);
       }
-      vars[curBlock[ForBreak]] = icp - internalCodes;
+      vars[curBlock[ForBreak]] = ip - instructions;
       loopDepth = curBlock[ForLoopDepth];
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
@@ -982,18 +982,18 @@ int compile(String sourceCode)
     return -1;
   }
   putIc(OpEnd, 0, 0, 0, 0);
-  IntPtr *end = icp, *tmpDest;
+  IntPtr *end = ip, *tmpDest;
   int op;
-  for (icp = internalCodes; icp < end; icp += 5) { // goto先の設定
-    op = (int) icp[0];
+  for (ip = instructions; ip < end; ip += 5) { // goto先の設定
+    op = (int) ip[0];
     if (OpGoto <= op && op <= OpLop) {
-      tmpDest = internalCodes + *icp[1];
+      tmpDest = instructions + *ip[1];
       while ((int) tmpDest[0] == OpGoto) // goto先がOpGotoのときは、さらにその先を読む（最適化）
-        tmpDest = internalCodes + *tmpDest[2];
-      icp[1] = (IntPtr) tmpDest;
+        tmpDest = instructions + *tmpDest[2];
+      ip[1] = (IntPtr) tmpDest;
     }
   }
-  return end - internalCodes;
+  return end - instructions;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
   return -1;
