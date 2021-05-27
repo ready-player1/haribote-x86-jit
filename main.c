@@ -849,6 +849,27 @@ int exprPutIc(int er, int len, int op, int *err)
   exit(1);
 }
 
+int exprPutIcX86(int er, int len, void *fn, int *err)
+{
+  int e[9] = {0};
+  for (int i = 0; i < len; ++i) {
+    if ((e[i] = expression(i)) < 0)
+      *err = -1;
+    putIcX86("8b_%0m0; 89_44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
+  }
+
+  putIcX86("e8_%0r;", fn, 0, 0, 0); // call rel16/32 <fn>
+
+  for (int i = 0; i < len; ++i)
+    tmpFree(e[i]);
+
+  if (er != 0) {
+    er = tmpAlloc();
+    putIcX86("89_%0m0;", &vars[er], 0, 0, 0);
+  }
+  return er;
+}
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
