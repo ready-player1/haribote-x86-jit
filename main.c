@@ -880,6 +880,7 @@ int compile(String sourceCode)
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
   ip = instructions;
+  putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
 
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
@@ -1089,19 +1090,8 @@ int compile(String sourceCode)
     printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
-  putIc(OpEnd, 0, 0, 0, 0);
-  IntPtr *end = ip, *tmpDest;
-  int op;
-  for (ip = instructions; ip < end; ip += 5) { // goto先の設定
-    op = (int) ip[0];
-    if (OpGoto <= op && op <= OpLop) {
-      tmpDest = instructions + *ip[1];
-      while ((int) tmpDest[0] == OpGoto) // goto先がOpGotoのときは、さらにその先を読む（最適化）
-        tmpDest = instructions + *tmpDest[2];
-      ip[1] = (IntPtr) tmpDest;
-    }
-  }
-  return end - instructions;
+  putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
+  return ip - instructions;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
   return -1;
