@@ -576,6 +576,11 @@ void tmpFree(int tokenCode)
     tmpFlags[ tokenCode - Tmp0 ] = 0;
 }
 
+void printInteger(int i)
+{
+  printf("%d\n", i);
+}
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
@@ -904,7 +909,7 @@ int compile(String sourceCode)
       putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
-      exprPutIc(0, 1, OpPrint, &e0);
+      exprPutIcX86(0, 1, printInteger, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
       vars[tc[wpc[0]]] = ip - instructions; // ラベル名の変数にその時のipの相対位置を入れておく
