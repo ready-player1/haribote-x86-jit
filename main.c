@@ -351,8 +351,8 @@ int match(int phraseId, String phrase, int pc)
 
 typedef AInt *IntPtr;
 
-IntPtr internalCodes[10000]; // ソースコードを変換して生成した内部コードを格納する
-IntPtr *icp;
+unsigned char *instructions;
+unsigned char *ip; // instruction pointer
 
 enum opcode {
   OpCpy = 0,
@@ -442,12 +442,115 @@ int getOpcode(int tokenCode) // for infix operators
 
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
-  icp[0] = (IntPtr) op;
-  icp[1] = p1;
-  icp[2] = p2;
-  icp[3] = p3;
-  icp[4] = p4;
-  icp += 5;
+  printf("putIc function will be removed in a future version\n");
+  exit(1);
+}
+
+
+// 渡された文字が16進数に使える文字なら、それを0-15の数に変換して返す
+char getHex(char ch)
+{
+  return '0' <= ch && ch <= '9' ? ch - '0'
+       : 'a' <= ch && ch <= 'f' ? ch - 'a' + 10
+       : 'A' <= ch && ch <= 'F' ? ch - 'A' + 10
+       :                          -1
+       ;
+}
+
+unsigned get32(unsigned char *p)
+{
+  return p[0] + p[1] * 256 + p[2] * 65536 + p[3] * 16777216;
+}
+
+void put32(unsigned char *p, unsigned i)
+{
+  p[0] =  i        & 0xff; // 1バイト目に、ビット0～7の内容を書き込む
+  p[1] = (i >>  8) & 0xff; // 2バイト目に、ビット8～15の内容を書き込む
+  p[2] = (i >> 16) & 0xff; // 3バイト目に、ビット16～23の内容を書き込む
+  p[3] = (i >> 24) & 0xff; // 4バイト目に、ビット24～31の内容を書き込む
+}
+
+void decodeX86(String str, IntPtr *operands)
+{
+  for (int pos = 0; str[pos] != 0;) {
+    if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':' || str[pos] == ';')
+      ++pos;
+    else if (getHex(str[pos]) >= 0 && getHex(str[pos + 1]) >= 0) { // 16進数2桁（opcode）
+      *ip = ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]);
+      ++ip;
+      pos += 2;
+    }
+    else if (str[pos] == '%') {
+      int i = str[pos + 1] - '0'; // 参照する追加引数の番号
+
+      switch (str[pos + 2]) {
+      unsigned reg;
+      case 'm': // ModR/Mバイト
+        /*
+          ModR/Mバイトは、オペランドを参照する多くの命令でオペコードの次に置くことになっている1バイトで、
+          アドレッシングモードを指定するために使われる。ModR/Mバイトには、以下の3つの情報フィールドがある。
+
+          MSB                             LSB
+          mod (2bit) | reg (3bit) | r/m (3bit)
+
+          modフィールドは、r/mフィールドと組み合わせて、24個のアドレッシングモードと8個のレジスタをコード化する。
+          modフィールドは、次のようにr/mの用途を切り替える。
+
+          mod=00: [レジスタ+レジスタ]
+          mod=01: [レジスタ+disp8]
+          mod=10: [レジスタ+disp16/32]
+          mod=11: レジスタ
+
+          disp8/16/32はレジスタを指定する場合の変位（displacement）のことで、ベースアドレスに加算して
+          実効アドレスを生成する。
+
+          regフィールドは、レジスタ番号や追加オペコード情報を指定する。
+
+          r/mフィールドは、modフィールドと組み合わせて24個のアドレッシングモードと8個のレジスタをコード化する。
+
+          実効アドレスを得るために組み合わせるmodおよびr/mフィールドのコードと、regフィールドで指定する
+          レジスタ番号や追加オペコード情報の値は以下の資料に示されている。
+
+          『IA-32 インテル® アーキテクチャ・ソフトウェア・デベロッパーズ・マニュアル 中巻A：命令セット・リファレンスA-M』
+          2.6.ModR/MおよびSIBバイトのアドレス指定モードのコード化 > 表2-2.  ModR/Mバイトによる32ビット・アドレス指定形式
+          https://www.intel.co.jp/content/dam/www/public/ijkk/jp/ja/documents/developer/IA32_Arh_Dev_Man_Vol2A_i.pdf#G8.6121
+        */
+        reg = str[pos + 3] - '0';
+        *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
+        put32(ip + 1, (unsigned) operands[i]);
+        ip += 5;
+        pos += 4;
+        continue;
+      case 'i': // int
+        put32(ip, (unsigned) operands[i]);
+        ip += 4;
+        break;
+      case 'c': // char
+        put32(ip, (unsigned) operands[i]);
+        ++ip;
+        break;
+      case 'r': // relative -> 現在位置（次の命令の先頭位置）からの相対値を計算して4バイトを書く拡張命令
+        put32(ip, (unsigned) operands[i] - (unsigned) (ip + 4));
+        ip += 4;
+        break;
+      }
+      pos += 3;
+    }
+    else {
+      printf("decode error: '%s'\n", str);
+      exit(1);
+    }
+  }
+}
+
+void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3)
+{
+  IntPtr operands[4];
+  operands[0] = p0;
+  operands[1] = p1;
+  operands[2] = p2;
+  operands[3] = p3;
+  decodeX86(instructionStr, operands);
 }
 
 #define N_TMPS 10
@@ -471,6 +574,11 @@ void tmpFree(int tokenCode)
 {
   if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
     tmpFlags[ tokenCode - Tmp0 ] = 0;
+}
+
+void printInteger(int i)
+{
+  printf("%d\n", i);
 }
 
 #define LOWEST_PRECEDENCE 99
@@ -662,7 +770,7 @@ int evalExpression(int precedenceLevel)
   return er;
 }
 
-// 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinternalCodes[]に書き込む
+// 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinstructions[]に書き込む
 int expression(int num)
 {
   int expressionBegin = wpc   [num];
@@ -742,23 +850,28 @@ enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, 
 // lenで渡した数の式を評価し、その結果を使ってputIcをする
 int exprPutIc(int er, int len, int op, int *err)
 {
+  printf("exprPutIc function will be removed in a future version\n");
+  exit(1);
+}
+
+int exprPutIcX86(int er, int len, void *fn, int *err)
+{
   int e[9] = {0};
-  int hasTmpAlloced = 0;
-  if (er != 0) {
-    er = e[0] = tmpAlloc();
-    hasTmpAlloced = 1;
-  }
-  for (int i = hasTmpAlloced; i < len; ++i) {
+  for (int i = 0; i < len; ++i) {
     if ((e[i] = expression(i)) < 0)
       *err = -1;
+    putIcX86("8b_%0m0; 89_44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
   }
 
-  putIc(op, &vars[e[0]], &vars[e[1]], &vars[e[2]], &vars[e[3]]);
-  if (len > 4)
-    putIc(OpPrm, &vars[e[4]], &vars[e[5]], &vars[e[6]], &vars[e[7]]);
+  putIcX86("e8_%0r;", fn, 0, 0, 0); // call rel16/32 <fn>
 
-  for (int i = hasTmpAlloced; i < len; ++i)
+  for (int i = 0; i < len; ++i)
     tmpFree(e[i]);
+
+  if (er != 0) {
+    er = tmpAlloc();
+    putIcX86("89_%0m0;", &vars[er], 0, 0, 0);
+  }
   return er;
 }
 
@@ -771,7 +884,8 @@ int compile(String sourceCode)
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
-  icp = internalCodes;
+  ip = instructions;
+  putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
 
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
@@ -783,7 +897,7 @@ int compile(String sourceCode)
     int *curBlock = &blockInfo[blockDepth];
     int e0 = 0, e2 = 0;
     if (match(1, "!!*0 = !!*1;", pc)) {
-      putIc(OpCpy, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+      putIcX86("8b_%1m0; 89_%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
     else if (match(10, "!!*0 = !!*1 + 1; if (!!*2 < !!*3) goto !!*4;", pc) && tc[wpc[0]] == tc[wpc[1]] && tc[wpc[0]] == tc[wpc[2]]) {
       putIc(OpLop, &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
@@ -795,10 +909,10 @@ int compile(String sourceCode)
       putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
-      exprPutIc(0, 1, OpPrint, &e0);
+      exprPutIcX86(0, 1, printInteger, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
-      vars[tc[wpc[0]]] = icp - internalCodes; // ラベル名の変数にその時のicpの相対位置を入れておく
+      vars[tc[wpc[0]]] = ip - instructions; // ラベル名の変数にその時のipの相対位置を入れておく
     }
     else if (match(5, "goto !!*0;", pc)) {
       putIc(OpGoto, &vars[tc[wpc[0]]], &vars[tc[wpc[0]]], 0, 0);
@@ -820,13 +934,13 @@ int compile(String sourceCode)
     else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
       putIc(OpGoto, &vars[curBlock[IfLabel1]], &vars[curBlock[IfLabel1]], 0, 0);
-      vars[curBlock[IfLabel0]] = icp - internalCodes;
+      vars[curBlock[IfLabel0]] = ip - instructions;
     }
     else if (match(13, "}", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       if (curBlock[IfLabel1] == 0)
-        vars[curBlock[IfLabel0]] = icp - internalCodes;
+        vars[curBlock[IfLabel0]] = ip - instructions;
       else
-        vars[curBlock[IfLabel1]] = icp - internalCodes;
+        vars[curBlock[IfLabel1]] = ip - instructions;
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
@@ -849,10 +963,10 @@ int compile(String sourceCode)
       e0 = expression(0);
       if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
         ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
-      vars[curBlock[ForBegin]] = icp - internalCodes;
+      vars[curBlock[ForBegin]] = ip - instructions;
     }
     else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
-      vars[curBlock[ForContinue]] = icp - internalCodes;
+      vars[curBlock[ForContinue]] = ip - instructions;
 
       int wpc1 = curBlock[ForWpc1];
       int wpc2 = curBlock[ForWpc2];
@@ -874,7 +988,7 @@ int compile(String sourceCode)
         else
           putIc(OpGoto, &vars[curBlock[ForBegin]], &vars[curBlock[ForBegin]], 0, 0);
       }
-      vars[curBlock[ForBreak]] = icp - internalCodes;
+      vars[curBlock[ForBreak]] = ip - instructions;
       loopDepth = curBlock[ForLoopDepth];
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
@@ -981,19 +1095,8 @@ int compile(String sourceCode)
     printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
-  putIc(OpEnd, 0, 0, 0, 0);
-  IntPtr *end = icp, *tmpDest;
-  int op;
-  for (icp = internalCodes; icp < end; icp += 5) { // goto先の設定
-    op = (int) icp[0];
-    if (OpGoto <= op && op <= OpLop) {
-      tmpDest = internalCodes + *icp[1];
-      while ((int) tmpDest[0] == OpGoto) // goto先がOpGotoのときは、さらにその先を読む（最適化）
-        tmpDest = internalCodes + *tmpDest[2];
-      icp[1] = (IntPtr) tmpDest;
-    }
-  }
-  return end - internalCodes;
+  putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
+  return ip - instructions;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
   return -1;
@@ -1001,191 +1104,33 @@ err:
 
 AWindow *win;
 
-void exec()
-{
-  clock_t t0 = clock();
-  icp = internalCodes;
-  IntPtr ary;
-  AInt i, j, sx, sy;
-  AInt32 *p32;
-  char str[100];
-  for (;;) {
-    switch ((int) icp[0]) {
-    case OpNeg:    *icp[1] = -*icp[2];           icp += 5; continue;
-    case OpAdd1:   ++(*icp[1]);                  icp += 5; continue;
-    case OpMul:    *icp[1] = *icp[2] *  *icp[3]; icp += 5; continue;
-    case OpDiv:    *icp[1] = *icp[2] /  *icp[3]; icp += 5; continue;
-    case OpMod:    *icp[1] = *icp[2] %  *icp[3]; icp += 5; continue;
-    case OpAdd:    *icp[1] = *icp[2] +  *icp[3]; icp += 5; continue;
-    case OpSub:    *icp[1] = *icp[2] -  *icp[3]; icp += 5; continue;
-    case OpShr:    *icp[1] = *icp[2] >> *icp[3]; icp += 5; continue;
-    case OpClt:    *icp[1] = *icp[2] <  *icp[3]; icp += 5; continue;
-    case OpCle:    *icp[1] = *icp[2] <= *icp[3]; icp += 5; continue;
-    case OpCgt:    *icp[1] = *icp[2] >  *icp[3]; icp += 5; continue;
-    case OpCge:    *icp[1] = *icp[2] >= *icp[3]; icp += 5; continue;
-    case OpCeq:    *icp[1] = *icp[2] == *icp[3]; icp += 5; continue;
-    case OpCne:    *icp[1] = *icp[2] != *icp[3]; icp += 5; continue;
-    case OpBand:   *icp[1] = *icp[2] &  *icp[3]; icp += 5; continue;
-    case OpAnd:    *icp[1] = *icp[2] && *icp[3]; icp += 5; continue;
-    case OpCpy:    *icp[1] = *icp[2];            icp += 5; continue;
-    case OpPrint:
-      i = *icp[1];
-      if (i < INT_MIN || INT_MAX < i) {
-        printf("outside the range of representable values of type 'int'\n");
-        exit(1);
-      }
-      printf("%d\n", (int) i);
-      icp += 5;
-      continue;
-    case OpGoto:                            icp = (IntPtr *) icp[1]; continue;
-    case OpJeq:   if (*icp[2] == *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJne:   if (*icp[2] != *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJle:   if (*icp[2] <= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJge:   if (*icp[2] >= *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJlt:   if (*icp[2] <  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpJgt:   if (*icp[2] >  *icp[3]) { icp = (IntPtr *) icp[1]; continue; } icp += 5; continue;
-    case OpTime:
-      printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
-      icp += 5;
-      continue;
-    case OpEnd:
-      if (win != NULL)
-        aFlushAll(win);
-      return;
-    case OpLop:
-      i = *icp[2];
-      ++i;
-      *icp[2] = i;
-      if (i < *icp[3]) {
-        icp = (IntPtr *) icp[1];
-        continue;
-      }
-      icp += 5;
-      continue;
-    case OpPrints:
-      printf("%s\n", (char *) *icp[1]);
-      icp += 5;
-      continue;
-    case OpAryNew:
-      *icp[1] = (AInt) malloc(*icp[2] * sizeof(AInt));
-      if (*icp[1] == (AInt) NULL) {
-        printf("failed to allocate memory\n");
-        exit(1);
-      }
-      memset((char *) *icp[1], 0, *icp[2] * sizeof(AInt));
-      icp += 5;
-      continue;
-    case OpAryInit:
-      memcpy((char *) *icp[1], (char *) icp[2], ((int) icp[3]) * sizeof(AInt));
-      icp += 5;
-      continue;
-    case OpArySet:
-      ary = (AInt *) *icp[1];
-      ary[ *icp[2] ] = *icp[3];
-      icp += 5;
-      continue;
-    case OpAryGet:
-      ary = (AInt *) *icp[1];
-      *icp[3] = ary[ *icp[2] ];
-      icp += 5;
-      continue;
-    case OpPrm:
-      printf("should not reach here!\n");
-      exit(1);
-    case OpOpnWin:
-      if (win != NULL) {
-        if (win->xsiz < *icp[1] || win->ysiz < *icp[2]) {
-          printf("openWin error\n");
-          return;
-        }
-      }
-      else
-        win = aOpenWin(*icp[1], *icp[2], (char *) *icp[3], 0);
-      icp += 5;
-      continue;
-    case OpSetPix0:
-      aSetPix0(win, *icp[1], *icp[2], *icp[3]);
-      icp += 5;
-      continue;
-    case OpM64s:
-      *icp[1] = (((AInt64) *icp[2]) * ((AInt64) *icp[3])) >> *icp[4];
-      icp += 5;
-      continue;
-    case OpRgb8:
-      *icp[1] = aRgb8(*icp[2], *icp[3], *icp[4]);
-      icp += 5;
-      continue;
-    case OpWait:
-      if (*icp[1] == -1) {
-        if (win != NULL)
-          aFlushAll(win);
-        return;
-      }
-      aWait(*icp[1]);
-      icp += 5;
-      continue;
-    case OpXorShift:
-      *icp[1] = aXorShift32();
-      icp += 5;
-      continue;
-    case OpGetPix:
-      *icp[1] = aGetPix(win, *icp[2], *icp[3]);
-      icp += 5;
-      continue;
-    case OpFilRct0:
-      aFillRect0(win, *icp[1], *icp[2], *icp[3], *icp[4], *icp[6]);
-      icp += 10;
-      continue;
-    case OpF16Sin:
-      *icp[1] = (AInt) (sin(*icp[2] * (2 * 3.14159265358979323 / 65536)) * 65536);
-      icp += 5;
-      continue;
-    case OpF16Cos:
-      *icp[1] = (AInt) (cos(*icp[2] * (2 * 3.14159265358979323 / 65536)) * 65536);
-      icp += 5;
-      continue;
-    case OpInkey:
-      *icp[1] = aInkey(win, *icp[2]);
-      icp += 5;
-      continue;
-    case OpDrwStr0:
-      aDrawStr0(win, *icp[1], *icp[2], *icp[3], *icp[4], (char *) *icp[6]);
-      icp += 10;
-      continue;
-    case OpGprDec:
-      sprintf(str, "%*d", *icp[3], *icp[7]);
-      aDrawStr0(win, *icp[1], *icp[2], *icp[4], *icp[6], str);
-      icp += 10;
-      continue;
-    case OpBitBlt:
-      ary = (AInt *) *icp[6];
-      p32 = &win->buf[ *icp[3] + *icp[4] * win->xsiz ];
-      sx = *icp[1];
-      sy = *icp[2];
-      for (j = 0; j < sy; ++j) {
-        for (i = 0; i < sx; ++i)
-          p32[i] = ary[i];
-        ary += sx;
-        p32 += win->xsiz;
-      }
-      icp += 10;
-      continue;
-    }
-  }
-}
-
 int run(String sourceCode)
 {
   if (compile(sourceCode) < 0)
     return 1;
+  void (*exec)() = (void (*)()) instructions;
   exec();
   return 0;
+}
+
+#include <unistd.h>
+#include <sys/mman.h>
+
+void *mallocRWX(int len)
+{
+  void *addr = mmap(0, len, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+  if (addr == MAP_FAILED) {
+    printf("mmap failed\n");
+    exit(1);
+  }
+  return addr;
 }
 
 void aMain()
 {
   unsigned char text[10000]; // ソースコード
 
+  instructions = mallocRWX(1024 * 1024);
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
   initCorrespondingTerms();
 
