@@ -690,7 +690,7 @@ int evalExpression(int precedenceLevel)
     ++epc;
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
     er = tmpAlloc();
-    putIc(OpNeg, &vars[er], &vars[e0], 0, 0);
+    putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
   else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
     er = exprPutIc(er, 4, OpM64s, &e0);
