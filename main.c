@@ -684,7 +684,7 @@ int evalExpression(int precedenceLevel)
   else if (tokenCodes[epc] == PlusPlus) { // 前置インクリメント
     ++epc;
     er = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
-    putIc(OpAdd1, &vars[er], 0, 0, 0);
+    putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[er], 0, 0, 0);
   }
   else if (tokenCodes[epc] == Minus) { // 単項マイナス
     ++epc;
@@ -740,8 +740,7 @@ int evalExpression(int precedenceLevel)
       ++epc;
       e0 = er;
       er = tmpAlloc();
-      putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
-      putIc(OpAdd1, &vars[e0], 0, 0, 0);
+      putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
     else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
       int op;
