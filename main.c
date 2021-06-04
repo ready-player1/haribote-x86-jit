@@ -440,6 +440,28 @@ int getOpcode(int tokenCode) // for infix operators
   return op;
 }
 
+String opBins[] = { // 二項演算子のための機械語
+  "8b_%1m0; 3b_%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",           // Equal
+  "8b_%1m0; 3b_%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",           // NotEq
+  "8b_%1m0; 3b_%2m0; 0f_9c_c0; 0f_b6_c0; 89_%0m0;",           // Les
+  "8b_%1m0; 3b_%2m0; 0f_9d_c0; 0f_b6_c0; 89_%0m0;",           // GtrEq
+  "8b_%1m0; 3b_%2m0; 0f_9e_c0; 0f_b6_c0; 89_%0m0;",           // LesEq
+  "8b_%1m0; 3b_%2m0; 0f_9f_c0; 0f_b6_c0; 89_%0m0;",           // Gtr
+  "8b_%1m0; 03_%2m0; 89_%0m0;",                               // Plus
+  "8b_%1m0; 2b_%2m0; 89_%0m0;",                               // Minus
+  "8b_%1m0; 0f_af_%2m0; 89_%0m0;",                            // Multi
+  "8b_%1m0; 99; f7_%2m7; 89_%0m0;",                           // Divi
+  "8b_%1m0; 99; f7_%2m7; 89_%0m2;",                           // Mod
+  "8b_%1m0; 23_%2m0; 89_%0m0;",                               // BitwiseAnd
+  "8b_%1m0; 8b_%2m1; d3_f8; 89_%0m0;",                        // ShiftRight
+  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // And
+};
+
+inline static String getOpBin(int tokenCode)
+{
+  return opBins[tokenCode - Equal];
+}
+
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
   printf("putIc function will be removed in a future version\n");
@@ -641,7 +663,7 @@ int evalInfixExpression(int i, int precedenceLevel, int op)
   ++epc;
   j = evalExpression(precedenceLevel);
   k = tmpAlloc();
-  putIc(op, &vars[k], &vars[i], &vars[j], 0);
+  putIcX86(getOpBin(op), &vars[k], &vars[i], &vars[j], 0);
   tmpFree(i);
   tmpFree(j);
   if (i < 0 || j < 0)
@@ -754,13 +776,13 @@ int evalExpression(int precedenceLevel)
       case Equal: case NotEq:
       case BitwiseAnd:
       case And:
-        er = evalInfixExpression(er, encountered - 1, getOpcode(tokenCode));
+        er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
       // 右結合
       case Assigne:
         ++epc;
         e0 = evalExpression(encountered);
-        putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
+        putIcX86("8b_%1m0; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
         break;
       }
     }
