@@ -354,6 +354,9 @@ typedef AInt *IntPtr;
 unsigned char *instructions;
 unsigned char *ip; // instruction pointer
 
+int jmps[10000]; // ジャンプ命令を書いた位置を格納する
+int jp;
+
 enum opcode {
   OpCpy = 0,
   OpCeq,
@@ -553,6 +556,12 @@ void decodeX86(String str, IntPtr *operands)
         break;
       case 'r': // relative -> 現在位置（次の命令の先頭位置）からの相対値を計算して4バイトを書く拡張命令
         put32(ip, (unsigned) operands[i] - (unsigned) (ip + 4));
+        ip += 4;
+        break;
+      case 'l': // label
+        put32(ip, (unsigned) operands[i]);
+        jmps[jp] = ip - instructions; // ジャンプ命令のラベルを書いた位置を記録する
+        ++jp;
         ip += 4;
         break;
       }
@@ -862,6 +871,12 @@ int tmpLabelAlloc()
   return getTokenCode(str, strlen(str));
 }
 
+// ラベルに対応するipの位置を記録する
+void defLabel(int tokenCode)
+{
+  vars[tokenCode] = ip - instructions;
+}
+
 #define BLOCK_INFO_UNIT_SIZE 10
 int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth, loopDepth;
 /*
@@ -913,6 +928,7 @@ int compile(String sourceCode)
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
   ip = instructions;
+  jp = 0;
   putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
 
   for (int i = 0; i < N_TMPS; ++i)
@@ -928,7 +944,8 @@ int compile(String sourceCode)
       putIcX86("8b_%1m0; 89_%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
     else if (match(10, "!!*0 = !!*1 + 1; if (!!*2 < !!*3) goto !!*4;", pc) && tc[wpc[0]] == tc[wpc[1]] && tc[wpc[0]] == tc[wpc[2]]) {
-      putIc(OpLop, &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
+      // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
+      putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
       putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[tc[wpc[0]]], 0, 0, 0);
@@ -940,7 +957,7 @@ int compile(String sourceCode)
       exprPutIcX86(0, 1, printInteger, &e0);
     }
     else if (match(0, "!!*0:", pc)) { // ラベル定義命令
-      vars[tc[wpc[0]]] = ip - instructions; // ラベル名の変数にその時のipの相対位置を入れておく
+      defLabel(tc[wpc[0]]);
     }
     else if (match(5, "goto !!*0;", pc)) {
       putIc(OpGoto, &vars[tc[wpc[0]]], &vars[tc[wpc[0]]], 0, 0);
@@ -1124,7 +1141,13 @@ int compile(String sourceCode)
     return -1;
   }
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
-  return ip - instructions;
+  unsigned char *end = ip, *src, *dest;
+  for (int i = 0; i < jp; ++i) { // 飛び先を指定する（相対値にする）
+    src  = jmps[i] + instructions;
+    dest = *(IntPtr) get32(src) + instructions;
+    put32(src, dest - (src + 4));
+  }
+  return end - instructions;
 err:
   printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
   return -1;
