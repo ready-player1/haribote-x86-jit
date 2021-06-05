@@ -603,6 +603,13 @@ void printInteger(int i)
   printf("%d\n", i);
 }
 
+clock_t t0;
+
+void printElapsedTime()
+{
+  printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
+}
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
@@ -942,7 +949,7 @@ int compile(String sourceCode)
       ifgoto(0, WhenConditionIsTrue, tc[wpc[1]]);
     }
     else if (match(7, "time;", pc)) {
-      putIc(OpTime, 0, 0, 0, 0);
+      exprPutIcX86(0, 0, printElapsedTime, &e0);
     }
     else if (match(11, "if (!!**0) {", pc)) { // ブロックif文
       blockDepth += BLOCK_INFO_UNIT_SIZE;
@@ -1130,6 +1137,7 @@ int run(String sourceCode)
   if (compile(sourceCode) < 0)
     return 1;
   void (*exec)() = (void (*)()) instructions;
+  t0 = clock();
   exec();
   return 0;
 }
