@@ -1142,6 +1142,14 @@ int compile(String sourceCode)
   }
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
   unsigned char *end = ip, *src, *dest;
+  for (int i = 0; i < jp; ++i) { // ジャンプ命令の最適化
+    src  = jmps[i] + instructions;
+    dest = *(IntPtr) get32(src) + instructions;
+    while (*dest == 0xe9) { // 飛び先がjmp命令だったら、さらにその先を読む
+      put32(src, get32(dest + 1));
+      dest = *(IntPtr) get32(dest + 1) + instructions;
+    }
+  }
   for (int i = 0; i < jp; ++i) { // 飛び先を指定する（相対値にする）
     src  = jmps[i] + instructions;
     dest = *(IntPtr) get32(src) + instructions;
