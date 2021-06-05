@@ -440,6 +440,28 @@ int getOpcode(int tokenCode) // for infix operators
   return op;
 }
 
+String opBins[] = { // 二項演算子のための機械語
+  "8b_%1m0; 3b_%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",           // Equal
+  "8b_%1m0; 3b_%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",           // NotEq
+  "8b_%1m0; 3b_%2m0; 0f_9c_c0; 0f_b6_c0; 89_%0m0;",           // Les
+  "8b_%1m0; 3b_%2m0; 0f_9d_c0; 0f_b6_c0; 89_%0m0;",           // GtrEq
+  "8b_%1m0; 3b_%2m0; 0f_9e_c0; 0f_b6_c0; 89_%0m0;",           // LesEq
+  "8b_%1m0; 3b_%2m0; 0f_9f_c0; 0f_b6_c0; 89_%0m0;",           // Gtr
+  "8b_%1m0; 03_%2m0; 89_%0m0;",                               // Plus
+  "8b_%1m0; 2b_%2m0; 89_%0m0;",                               // Minus
+  "8b_%1m0; 0f_af_%2m0; 89_%0m0;",                            // Multi
+  "8b_%1m0; 99; f7_%2m7; 89_%0m0;",                           // Divi
+  "8b_%1m0; 99; f7_%2m7; 89_%0m2;",                           // Mod
+  "8b_%1m0; 23_%2m0; 89_%0m0;",                               // BitwiseAnd
+  "8b_%1m0; 8b_%2m1; d3_f8; 89_%0m0;",                        // ShiftRight
+  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // And
+};
+
+inline static String getOpBin(int tokenCode)
+{
+  return opBins[tokenCode - Equal];
+}
+
 void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
 {
   printf("putIc function will be removed in a future version\n");
@@ -641,7 +663,7 @@ int evalInfixExpression(int i, int precedenceLevel, int op)
   ++epc;
   j = evalExpression(precedenceLevel);
   k = tmpAlloc();
-  putIc(op, &vars[k], &vars[i], &vars[j], 0);
+  putIcX86(getOpBin(op), &vars[k], &vars[i], &vars[j], 0);
   tmpFree(i);
   tmpFree(j);
   if (i < 0 || j < 0)
@@ -662,13 +684,13 @@ int evalExpression(int precedenceLevel)
   else if (tokenCodes[epc] == PlusPlus) { // 前置インクリメント
     ++epc;
     er = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
-    putIc(OpAdd1, &vars[er], 0, 0, 0);
+    putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[er], 0, 0, 0);
   }
   else if (tokenCodes[epc] == Minus) { // 単項マイナス
     ++epc;
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
     er = tmpAlloc();
-    putIc(OpNeg, &vars[er], &vars[e0], 0, 0);
+    putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
   else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
     er = exprPutIc(er, 4, OpM64s, &e0);
@@ -718,8 +740,7 @@ int evalExpression(int precedenceLevel)
       ++epc;
       e0 = er;
       er = tmpAlloc();
-      putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
-      putIc(OpAdd1, &vars[e0], 0, 0, 0);
+      putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
     else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
       int op;
@@ -754,13 +775,13 @@ int evalExpression(int precedenceLevel)
       case Equal: case NotEq:
       case BitwiseAnd:
       case And:
-        er = evalInfixExpression(er, encountered - 1, getOpcode(tokenCode));
+        er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
       // 右結合
       case Assigne:
         ++epc;
         e0 = evalExpression(encountered);
-        putIc(OpCpy, &vars[er], &vars[e0], 0, 0);
+        putIcX86("8b_%1m0; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
         break;
       }
     }
@@ -903,10 +924,10 @@ int compile(String sourceCode)
       putIc(OpLop, &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
-      putIc(OpAdd1, &vars[tc[wpc[0]]], 0, 0, 0);
+      putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[tc[wpc[0]]], 0, 0, 0);
     }
     else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
-      putIc(OpCeq + tc[wpc[2]] - Equal, &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
+      putIcX86(getOpBin(tc[wpc[2]]), &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
     }
     else if (match(4, "print !!**0;", pc)) {
       exprPutIcX86(0, 1, printInteger, &e0);
