@@ -1132,6 +1132,15 @@ int compile(String sourceCode)
     else if (match(35, "codedump !!*0", pc)) {
       codedump = vars[tc[wpc[0]]];
     }
+    else if (match(36, "code", pc)) {
+      for (++pc; tc[pc] != Semicolon; ++pc) {
+        if (tc[pc] == Comma)
+          continue;
+        *ip = vars[tc[pc]];
+        ++ip;
+      }
+      nextPc = pc + 1;
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
