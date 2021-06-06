@@ -357,6 +357,8 @@ unsigned char *ip; // instruction pointer
 int jmps[10000]; // ジャンプ命令を書いた位置を格納する
 int jp;
 
+unsigned char *dumpBegin, *dumpEnd;
+
 enum opcode {
   OpCpy = 0,
   OpCeq,
@@ -918,6 +920,8 @@ int exprPutIcX86(int er, int len, void *fn, int *err)
   return er;
 }
 
+int codedump;
+
 int compile(String sourceCode)
 {
   int nTokens = lexer(sourceCode, tokenCodes);
@@ -930,6 +934,7 @@ int compile(String sourceCode)
   ip = instructions;
   jp = 0;
   putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
+  dumpBegin = ip;
 
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
@@ -1124,6 +1129,9 @@ int compile(String sourceCode)
         ++pc;
       nextPc = pc;
     }
+    else if (match(35, "codedump !!*0", pc)) {
+      codedump = vars[tc[wpc[0]]];
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
@@ -1140,6 +1148,7 @@ int compile(String sourceCode)
     printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
+  dumpEnd = ip;
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
   unsigned char *end = ip, *src, *dest;
   for (int i = 0; i < jp; ++i) { // ジャンプ命令の最適化
@@ -1167,9 +1176,19 @@ int run(String sourceCode)
 {
   if (compile(sourceCode) < 0)
     return 1;
-  void (*exec)() = (void (*)()) instructions;
-  t0 = clock();
-  exec();
+  if (codedump == 0) {
+    void (*exec)() = (void (*)()) instructions;
+    t0 = clock();
+    exec();
+  }
+  else {
+    int nBytes = dumpEnd - dumpBegin;
+    for (int i = 0; i < nBytes; ++i)
+      printf("%02x ", *(dumpBegin + i));
+    if (nBytes)
+      printf("\n");
+    printf("(len=%d)\n", nBytes);
+  }
   return 0;
 }
 
