@@ -609,17 +609,11 @@ void tmpFree(int tokenCode)
     tmpFlags[ tokenCode - Tmp0 ] = 0;
 }
 
-void printInteger(int i)
-{
-  printf("%d\n", i);
-}
-
 clock_t t0;
 
-void printElapsedTime()
-{
-  printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
-}
+void printInteger(int i)  { printf("%d\n", i); }
+void printString(char *s) { printf("%s\n", s); }
+void printElapsedTime()   { printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC); }
 
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
@@ -1059,7 +1053,7 @@ int compile(String sourceCode)
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
     else if (match(20, "prints !!**0;", pc)) {
-      exprPutIc(0, 1, OpPrints, &e0);
+      exprPutIcX86(0, 1, printString, &e0);
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
@@ -1111,7 +1105,7 @@ int compile(String sourceCode)
       exprPutIc(0, 5, OpBitBlt, &e0);
     }
     else if (match(29, "printTime();", pc)) { // time;と同じ（C言語っぽく書けるようにした）
-      exprPutIc(0, 0, OpTime, &e0);
+      exprPutIcX86(0, 0, printElapsedTime, &e0);
     }
     else if (match(30, "void aMain() {", pc)) {
       blockDepth += BLOCK_INFO_UNIT_SIZE;
