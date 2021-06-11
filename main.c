@@ -615,6 +615,9 @@ void printInteger(int i)  { printf("%d\n", i); }
 void printString(char *s) { printf("%s\n", s); }
 void printElapsedTime()   { printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC); }
 
+int ff16sin(int x) { return (int) (sin(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
+int ff16cos(int x) { return (int) (cos(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
@@ -720,11 +723,11 @@ int evalExpression(int precedenceLevel)
   else if (match(75, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
     er = exprPutIc(er, 3, OpGetPix, &e0);
   }
-  else if (match(76, "ff16sin(!!**1)", epc)) {
-    er = exprPutIc(er, 2, OpF16Sin, &e0);
+  else if (match(76, "ff16sin(!!**0)", epc)) {
+    er = exprPutIcX86(er, 1, ff16sin, &e0);
   }
-  else if (match(77, "ff16cos(!!**1)", epc)) {
-    er = exprPutIc(er, 2, OpF16Cos, &e0);
+  else if (match(77, "ff16cos(!!**0)", epc)) {
+    er = exprPutIcX86(er, 1, ff16cos, &e0);
   }
   else if (match(78, "aInkey(!!***8 , !!**1)", epc)) {
     er = exprPutIc(er, 2, OpInkey, &e0);
