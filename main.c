@@ -843,6 +843,9 @@ int expression(int num)
 
 enum conditionType { WhenConditionIsTrue = 0, WhenConditionIsFalse };
 
+//                       je    jne   jl    jge   jle   jg
+int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
+
 // 条件式wpc[num]を評価して、その結果に応じてlabel（トークンコード）に分岐する内部コードを生成する
 void ifgoto(int num, int conditionType, int label) {
   int conditionBegin = wpc   [num];
@@ -850,12 +853,17 @@ void ifgoto(int num, int conditionType, int label) {
 
   int *tc = tokenCodes, operator = tc[conditionBegin + 1];
   if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
-    int op = OpJeq + ((operator - Equal) ^ conditionType);
-    putIc(op, &vars[label], &vars[tc[conditionBegin]], &vars[tc[conditionBegin + 2]], 0);
+    // mov r/m16/32,%eax; cmp r/m16/32,%eax; jcc rel16/32;
+    putIcX86("8b_%2m0; 3b_%3m0; 0f_%0c_%1l;",
+        (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
+        &vars[label],
+        &vars[tc[conditionBegin]],
+        &vars[tc[conditionBegin + 2]]);
   }
   else {
     num = expression(num);
-    putIc(OpJne - conditionType, &vars[label], &vars[num], &vars[Zero], 0);
+    // mov %eax,r/m16/32; test %eax,%eax; jcc rel16/32;
+    putIcX86("8b_%2m0; 85_c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
     tmpFree(num);
   }
 }
