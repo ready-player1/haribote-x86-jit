@@ -988,14 +988,14 @@ int compile(String sourceCode)
     }
     else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
-      putIc(OpGoto, &vars[curBlock[IfLabel1]], &vars[curBlock[IfLabel1]], 0, 0);
-      vars[curBlock[IfLabel0]] = ip - instructions;
+      putIcX86("e9_%0l;", &vars[curBlock[IfLabel1]], 0, 0, 0); // jmp rel16/32
+      defLabel(curBlock[IfLabel0]);
     }
     else if (match(13, "}", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       if (curBlock[IfLabel1] == 0)
-        vars[curBlock[IfLabel0]] = ip - instructions;
+        defLabel(curBlock[IfLabel0]);
       else
-        vars[curBlock[IfLabel1]] = ip - instructions;
+        defLabel(curBlock[IfLabel1]);
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
