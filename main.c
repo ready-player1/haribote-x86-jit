@@ -962,7 +962,7 @@ int compile(String sourceCode)
       defLabel(tc[wpc[0]]);
     }
     else if (match(5, "goto !!*0;", pc)) {
-      putIc(OpGoto, &vars[tc[wpc[0]]], &vars[tc[wpc[0]]], 0, 0);
+      putIcX86("e9_%0l;", &vars[tc[wpc[0]]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(6, "if (!!**0) goto !!*1;", pc)) {
       ifgoto(0, WhenConditionIsTrue, tc[wpc[1]]);
