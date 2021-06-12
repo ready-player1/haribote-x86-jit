@@ -620,12 +620,67 @@ int ff16cos(int x) { return (int) (cos(x * (2 * 3.14159265358979323 / 65536)) * 
 
 int toExit;
 
+// acl library functions call
+AWindow *win;
+
+int  call_aRgb8(int r, int g, int b)    { return aRgb8(r, g, b); }
+int  call_aXorShift32()                 { return aXorShift32(); }
+int  call_aGetPix(int x, int y)         { return aGetPix(win, x, y); }
+int  call_aInkey(int opt)               { return aInkey(win, opt); }
+void call_aSetPix0(int x, int y, int c) { aSetPix0(win, x, y, c); }
+void call_aFillRct0(int xsiz, int ysiz, int x0, int y0, int c) { aFillRect0(win, xsiz, ysiz, x0, y0, c); }
+void call_aDrawStr0(int x, int y, int col, int bcol, char *s)  { aDrawStr0(win, x, y, col, bcol, s); }
+
+void gprintDec(int x, int y, int len, int col, int bcol, int i)
+{
+  char s[100];
+  sprintf(s, "%*d", len, i);
+  aDrawStr0(win, x, y, col, bcol, s);
+}
+
+int call_aOpenWin(int xsiz, int ysiz, char *s)
+{
+  if (win != NULL) {
+    if (win->xsiz < xsiz || win->ysiz < ysiz) {
+      printf("openWin error\n");
+      return 1;
+    }
+  }
+  else
+    win = aOpenWin(xsiz, ysiz, s, 0);
+  return 0;
+}
+
+int call_aWait(int msec)
+{
+  if (msec == -1) {
+    if (win != NULL)
+      aFlushAll(win);
+    return 1;
+  }
+  aWait(msec);
+  return 0;
+}
+
+int bitblit(int xsiz, int ysiz, int x0, int y0, int *ary)
+{
+  AInt32 *p32 = &win->buf[x0 + y0 * win->xsiz];
+  int i, j;
+  for (j = 0; j < ysiz; ++j) {
+    for (i = 0; i < xsiz; ++i)
+      p32[i] = ary[i];
+    ary += xsiz;
+    p32 += win->xsiz;
+  }
+}
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
 int exprPutIc(int er, int len, int op, int *err);
+int exprPutIcX86(int er, int len, void *fn, int *err);
 
 enum notationStyle { Prefix = 0, Infix };
 
@@ -709,21 +764,36 @@ int evalExpression(int precedenceLevel)
     er = tmpAlloc();
     putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
-  else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
-    er = exprPutIc(er, 4, OpM64s, &e0);
+  else if (match(71, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
+    e0 = expression(0);
+    e1 = expression(1);
+    int e2 = expression(2);
+    er = tmpAlloc();
+    putIcX86("8b_%2m1; 8b_%0m0; f7_%1m5; 0f_ad_d0; 89_%3m0;", &vars[e0], &vars[e1], &vars[e2], &vars[er]);
+    /*
+      8b_%2m1  -> mov r/m16/32,%ecx
+      8b_%0m0  -> mov r/m16/32,%eax
+      f7_%1m5  -> imul r/m16/32      # eaxに%mで指定した値を掛け算して、結果をedx:eaxに入れる
+      0f_ad_d0 -> shrd %cl,%edx,%eax # edx:eaxの64bitをecxだけ右シフトする。でもeaxしか更新されない（edxはそのまま）
+      89_%3m0  -> mov %eax,r/m16/32
+    */
+    tmpFree(e2);
+    if (e2 < 0)
+      e0 = -1;
   }
-  else if (match(72, "aRgb8(!!**1, !!**2, !!**3)", epc)) {
-    er = exprPutIc(er, 4, OpRgb8, &e0);
+  else if (match(72, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
+    er = exprPutIcX86(er, 3, call_aRgb8, &e0);
   }
   else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
-    exprPutIc(0, 3, OpOpnWin, &e0);
+    exprPutIcX86(0, 3, call_aOpenWin, &e0);
+    putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     er = Zero;
   }
   else if (match(74, "aXorShift32()", epc)) {
-    er = exprPutIc(er, 1, OpXorShift, &e0);
+    er = exprPutIcX86(er, 0, call_aXorShift32, &e0);
   }
-  else if (match(75, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
-    er = exprPutIc(er, 3, OpGetPix, &e0);
+  else if (match(75, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
+    er = exprPutIcX86(er, 2, call_aGetPix, &e0);
   }
   else if (match(76, "ff16sin(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16sin, &e0);
@@ -731,8 +801,8 @@ int evalExpression(int precedenceLevel)
   else if (match(77, "ff16cos(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16cos, &e0);
   }
-  else if (match(78, "aInkey(!!***8 , !!**1)", epc)) {
-    er = exprPutIc(er, 2, OpInkey, &e0);
+  else if (match(78, "aInkey(!!***8, !!**0)", epc)) {
+    er = exprPutIcX86(er, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
     er = tokenCodes[epc];
@@ -1103,22 +1173,23 @@ int compile(String sourceCode)
       nextPc = pc + 2; // } と ; の分
     }
     else if (match(23, "aSetPix0(!!***8, !!**0, !!**1, !!**2);", pc)) {
-      exprPutIc(0, 3, OpSetPix0, &e0);
+      exprPutIcX86(0, 3, call_aSetPix0, &e0);
     }
     else if (match(24, "aWait(!!**0);", pc)) {
-      exprPutIc(0, 1, OpWait, &e0);
+      exprPutIcX86(0, 1, call_aWait, &e0);
+      putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     }
     else if (match(25, "aFillRect0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpFilRct0, &e0);
+      exprPutIcX86(0, 5, call_aFillRct0, &e0);
     }
     else if (match(26, "aDrawStr0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpDrwStr0, &e0);
+      exprPutIcX86(0, 5, call_aDrawStr0, &e0);
     }
     else if (match(27, "gprintDec(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4, !!**5);", pc)) {
-      exprPutIc(0, 6, OpGprDec, &e0);
+      exprPutIcX86(0, 6, gprintDec, &e0);
     }
     else if (match(28, "bitblt(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpBitBlt, &e0);
+      exprPutIcX86(0, 5, bitblit, &e0);
     }
     else if (match(29, "printTime();", pc)) { // time;と同じ（C言語っぽく書けるようにした）
       exprPutIcX86(0, 0, printElapsedTime, &e0);
@@ -1200,6 +1271,8 @@ int run(String sourceCode)
     void (*exec)() = (void (*)()) instructions;
     t0 = clock();
     exec();
+    if (win != NULL)
+      aFlushAll(win);
   }
   else {
     int nBytes = dumpEnd - dumpBegin;
