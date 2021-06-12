@@ -618,6 +618,8 @@ void printElapsedTime()   { printf("time: %.3f[sec]\n", (clock() - t0) / (double
 int ff16sin(int x) { return (int) (sin(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
 int ff16cos(int x) { return (int) (cos(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
 
+int toExit;
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
@@ -944,6 +946,7 @@ int compile(String sourceCode)
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
   tmpLabelNo = 0;
+  toExit = tmpLabelAlloc();
   blockDepth = loopDepth = 0;
 
   int pc;
@@ -1018,10 +1021,10 @@ int compile(String sourceCode)
       e0 = expression(0);
       if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
         ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
-      vars[curBlock[ForBegin]] = ip - instructions;
+      defLabel(curBlock[ForBegin]);
     }
     else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
-      vars[curBlock[ForContinue]] = ip - instructions;
+      defLabel(curBlock[ForContinue]);
 
       int wpc1 = curBlock[ForWpc1];
       int wpc2 = curBlock[ForWpc2];
@@ -1029,8 +1032,10 @@ int compile(String sourceCode)
       int isWpc2PlusPlus = (wpc2 + 2 == curBlock[ForWpcEnd2]) &&
         ( (tc[wpc1] == tc[wpc2] && tc[wpc2 + 1] == PlusPlus) || (tc[wpc1] == tc[wpc2 + 1] && tc[wpc2] == PlusPlus) );
 
-      if (isWpc1Les && isWpc2PlusPlus)
-        putIc(OpLop, &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+      if (isWpc1Les && isWpc2PlusPlus) {
+        // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
+        putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+      }
       else {
         wpc   [1] = curBlock[ ForWpc1    ];
         wpcEnd[1] = curBlock[ ForWpcEnd1 ];
@@ -1041,19 +1046,19 @@ int compile(String sourceCode)
         if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
           ifgoto(1, WhenConditionIsTrue, curBlock[ForBegin]);
         else
-          putIc(OpGoto, &vars[curBlock[ForBegin]], &vars[curBlock[ForBegin]], 0, 0);
+          putIcX86("e9_%0l;", &vars[curBlock[ForBegin]], 0, 0, 0); // jmp rel16/32
       }
-      vars[curBlock[ForBreak]] = ip - instructions;
+      defLabel(curBlock[ForBreak]);
       loopDepth = curBlock[ForLoopDepth];
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(16, "continue;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      putIc(OpGoto, &vars[loopBlock[ForContinue]], &vars[loopBlock[ForContinue]], 0, 0);
+      putIcX86("e9_%0l;", &vars[loopBlock[ForContinue]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(17, "break;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      putIc(OpGoto, &vars[loopBlock[ForBreak]], &vars[loopBlock[ForBreak]], 0, 0);
+      putIcX86("e9_%0l;", &vars[loopBlock[ForBreak]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(18, "if (!!**0) continue;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
@@ -1162,6 +1167,7 @@ int compile(String sourceCode)
     printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
+  defLabel(toExit);
   dumpEnd = ip;
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
   unsigned char *end = ip, *src, *dest;
