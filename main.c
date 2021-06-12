@@ -609,16 +609,69 @@ void tmpFree(int tokenCode)
     tmpFlags[ tokenCode - Tmp0 ] = 0;
 }
 
-void printInteger(int i)
-{
-  printf("%d\n", i);
-}
-
 clock_t t0;
 
-void printElapsedTime()
+void printInteger(int i)  { printf("%d\n", i); }
+void printString(char *s) { printf("%s\n", s); }
+void printElapsedTime()   { printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC); }
+
+int ff16sin(int x) { return (int) (sin(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
+int ff16cos(int x) { return (int) (cos(x * (2 * 3.14159265358979323 / 65536)) * 65536); }
+
+int toExit;
+
+// acl library functions call
+AWindow *win;
+
+int  call_aRgb8(int r, int g, int b)    { return aRgb8(r, g, b); }
+int  call_aXorShift32()                 { return aXorShift32(); }
+int  call_aGetPix(int x, int y)         { return aGetPix(win, x, y); }
+int  call_aInkey(int opt)               { return aInkey(win, opt); }
+void call_aSetPix0(int x, int y, int c) { aSetPix0(win, x, y, c); }
+void call_aFillRct0(int xsiz, int ysiz, int x0, int y0, int c) { aFillRect0(win, xsiz, ysiz, x0, y0, c); }
+void call_aDrawStr0(int x, int y, int col, int bcol, char *s)  { aDrawStr0(win, x, y, col, bcol, s); }
+
+void gprintDec(int x, int y, int len, int col, int bcol, int i)
 {
-  printf("time: %.3f[sec]\n", (clock() - t0) / (double) CLOCKS_PER_SEC);
+  char s[100];
+  sprintf(s, "%*d", len, i);
+  aDrawStr0(win, x, y, col, bcol, s);
+}
+
+int call_aOpenWin(int xsiz, int ysiz, char *s)
+{
+  if (win != NULL) {
+    if (win->xsiz < xsiz || win->ysiz < ysiz) {
+      printf("openWin error\n");
+      return 1;
+    }
+  }
+  else
+    win = aOpenWin(xsiz, ysiz, s, 0);
+  return 0;
+}
+
+int call_aWait(int msec)
+{
+  if (msec == -1) {
+    if (win != NULL)
+      aFlushAll(win);
+    return 1;
+  }
+  aWait(msec);
+  return 0;
+}
+
+int bitblit(int xsiz, int ysiz, int x0, int y0, int *ary)
+{
+  AInt32 *p32 = &win->buf[x0 + y0 * win->xsiz];
+  int i, j;
+  for (j = 0; j < ysiz; ++j) {
+    for (i = 0; i < xsiz; ++i)
+      p32[i] = ary[i];
+    ary += xsiz;
+    p32 += win->xsiz;
+  }
 }
 
 #define LOWEST_PRECEDENCE 99
@@ -627,6 +680,7 @@ int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
 int exprPutIc(int er, int len, int op, int *err);
+int exprPutIcX86(int er, int len, void *fn, int *err);
 
 enum notationStyle { Prefix = 0, Infix };
 
@@ -710,30 +764,45 @@ int evalExpression(int precedenceLevel)
     er = tmpAlloc();
     putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
-  else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
-    er = exprPutIc(er, 4, OpM64s, &e0);
+  else if (match(71, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
+    e0 = expression(0);
+    e1 = expression(1);
+    int e2 = expression(2);
+    er = tmpAlloc();
+    putIcX86("8b_%2m1; 8b_%0m0; f7_%1m5; 0f_ad_d0; 89_%3m0;", &vars[e0], &vars[e1], &vars[e2], &vars[er]);
+    /*
+      8b_%2m1  -> mov r/m16/32,%ecx
+      8b_%0m0  -> mov r/m16/32,%eax
+      f7_%1m5  -> imul r/m16/32      # eaxに%mで指定した値を掛け算して、結果をedx:eaxに入れる
+      0f_ad_d0 -> shrd %cl,%edx,%eax # edx:eaxの64bitをecxだけ右シフトする。でもeaxしか更新されない（edxはそのまま）
+      89_%3m0  -> mov %eax,r/m16/32
+    */
+    tmpFree(e2);
+    if (e2 < 0)
+      e0 = -1;
   }
-  else if (match(72, "aRgb8(!!**1, !!**2, !!**3)", epc)) {
-    er = exprPutIc(er, 4, OpRgb8, &e0);
+  else if (match(72, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
+    er = exprPutIcX86(er, 3, call_aRgb8, &e0);
   }
   else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
-    exprPutIc(0, 3, OpOpnWin, &e0);
+    exprPutIcX86(0, 3, call_aOpenWin, &e0);
+    putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     er = Zero;
   }
   else if (match(74, "aXorShift32()", epc)) {
-    er = exprPutIc(er, 1, OpXorShift, &e0);
+    er = exprPutIcX86(er, 0, call_aXorShift32, &e0);
   }
-  else if (match(75, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
-    er = exprPutIc(er, 3, OpGetPix, &e0);
+  else if (match(75, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
+    er = exprPutIcX86(er, 2, call_aGetPix, &e0);
   }
-  else if (match(76, "ff16sin(!!**1)", epc)) {
-    er = exprPutIc(er, 2, OpF16Sin, &e0);
+  else if (match(76, "ff16sin(!!**0)", epc)) {
+    er = exprPutIcX86(er, 1, ff16sin, &e0);
   }
-  else if (match(77, "ff16cos(!!**1)", epc)) {
-    er = exprPutIc(er, 2, OpF16Cos, &e0);
+  else if (match(77, "ff16cos(!!**0)", epc)) {
+    er = exprPutIcX86(er, 1, ff16cos, &e0);
   }
-  else if (match(78, "aInkey(!!***8 , !!**1)", epc)) {
-    er = exprPutIc(er, 2, OpInkey, &e0);
+  else if (match(78, "aInkey(!!***8, !!**0)", epc)) {
+    er = exprPutIcX86(er, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
     er = tokenCodes[epc];
@@ -846,6 +915,9 @@ int expression(int num)
 
 enum conditionType { WhenConditionIsTrue = 0, WhenConditionIsFalse };
 
+//                       je    jne   jl    jge   jle   jg
+int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
+
 // 条件式wpc[num]を評価して、その結果に応じてlabel（トークンコード）に分岐する内部コードを生成する
 void ifgoto(int num, int conditionType, int label) {
   int conditionBegin = wpc   [num];
@@ -853,12 +925,17 @@ void ifgoto(int num, int conditionType, int label) {
 
   int *tc = tokenCodes, operator = tc[conditionBegin + 1];
   if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
-    int op = OpJeq + ((operator - Equal) ^ conditionType);
-    putIc(op, &vars[label], &vars[tc[conditionBegin]], &vars[tc[conditionBegin + 2]], 0);
+    // mov r/m16/32,%eax; cmp r/m16/32,%eax; jcc rel16/32;
+    putIcX86("8b_%2m0; 3b_%3m0; 0f_%0c_%1l;",
+        (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
+        &vars[label],
+        &vars[tc[conditionBegin]],
+        &vars[tc[conditionBegin + 2]]);
   }
   else {
     num = expression(num);
-    putIc(OpJne - conditionType, &vars[label], &vars[num], &vars[Zero], 0);
+    // mov %eax,r/m16/32; test %eax,%eax; jcc rel16/32;
+    putIcX86("8b_%2m0; 85_c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
     tmpFree(num);
   }
 }
@@ -939,6 +1016,7 @@ int compile(String sourceCode)
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
   tmpLabelNo = 0;
+  toExit = tmpLabelAlloc();
   blockDepth = loopDepth = 0;
 
   int pc;
@@ -965,7 +1043,7 @@ int compile(String sourceCode)
       defLabel(tc[wpc[0]]);
     }
     else if (match(5, "goto !!*0;", pc)) {
-      putIc(OpGoto, &vars[tc[wpc[0]]], &vars[tc[wpc[0]]], 0, 0);
+      putIcX86("e9_%0l;", &vars[tc[wpc[0]]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(6, "if (!!**0) goto !!*1;", pc)) {
       ifgoto(0, WhenConditionIsTrue, tc[wpc[1]]);
@@ -983,14 +1061,14 @@ int compile(String sourceCode)
     }
     else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
-      putIc(OpGoto, &vars[curBlock[IfLabel1]], &vars[curBlock[IfLabel1]], 0, 0);
-      vars[curBlock[IfLabel0]] = ip - instructions;
+      putIcX86("e9_%0l;", &vars[curBlock[IfLabel1]], 0, 0, 0); // jmp rel16/32
+      defLabel(curBlock[IfLabel0]);
     }
     else if (match(13, "}", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       if (curBlock[IfLabel1] == 0)
-        vars[curBlock[IfLabel0]] = ip - instructions;
+        defLabel(curBlock[IfLabel0]);
       else
-        vars[curBlock[IfLabel1]] = ip - instructions;
+        defLabel(curBlock[IfLabel1]);
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
@@ -1013,10 +1091,10 @@ int compile(String sourceCode)
       e0 = expression(0);
       if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
         ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
-      vars[curBlock[ForBegin]] = ip - instructions;
+      defLabel(curBlock[ForBegin]);
     }
     else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
-      vars[curBlock[ForContinue]] = ip - instructions;
+      defLabel(curBlock[ForContinue]);
 
       int wpc1 = curBlock[ForWpc1];
       int wpc2 = curBlock[ForWpc2];
@@ -1024,8 +1102,10 @@ int compile(String sourceCode)
       int isWpc2PlusPlus = (wpc2 + 2 == curBlock[ForWpcEnd2]) &&
         ( (tc[wpc1] == tc[wpc2] && tc[wpc2 + 1] == PlusPlus) || (tc[wpc1] == tc[wpc2 + 1] && tc[wpc2] == PlusPlus) );
 
-      if (isWpc1Les && isWpc2PlusPlus)
-        putIc(OpLop, &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+      if (isWpc1Les && isWpc2PlusPlus) {
+        // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
+        putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+      }
       else {
         wpc   [1] = curBlock[ ForWpc1    ];
         wpcEnd[1] = curBlock[ ForWpcEnd1 ];
@@ -1036,19 +1116,19 @@ int compile(String sourceCode)
         if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
           ifgoto(1, WhenConditionIsTrue, curBlock[ForBegin]);
         else
-          putIc(OpGoto, &vars[curBlock[ForBegin]], &vars[curBlock[ForBegin]], 0, 0);
+          putIcX86("e9_%0l;", &vars[curBlock[ForBegin]], 0, 0, 0); // jmp rel16/32
       }
-      vars[curBlock[ForBreak]] = ip - instructions;
+      defLabel(curBlock[ForBreak]);
       loopDepth = curBlock[ForLoopDepth];
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
     else if (match(16, "continue;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      putIc(OpGoto, &vars[loopBlock[ForContinue]], &vars[loopBlock[ForContinue]], 0, 0);
+      putIcX86("e9_%0l;", &vars[loopBlock[ForContinue]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(17, "break;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      putIc(OpGoto, &vars[loopBlock[ForBreak]], &vars[loopBlock[ForBreak]], 0, 0);
+      putIcX86("e9_%0l;", &vars[loopBlock[ForBreak]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(18, "if (!!**0) continue;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
@@ -1059,7 +1139,7 @@ int compile(String sourceCode)
       ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
     }
     else if (match(20, "prints !!**0;", pc)) {
-      exprPutIc(0, 1, OpPrints, &e0);
+      exprPutIcX86(0, 1, printString, &e0);
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
@@ -1093,25 +1173,26 @@ int compile(String sourceCode)
       nextPc = pc + 2; // } と ; の分
     }
     else if (match(23, "aSetPix0(!!***8, !!**0, !!**1, !!**2);", pc)) {
-      exprPutIc(0, 3, OpSetPix0, &e0);
+      exprPutIcX86(0, 3, call_aSetPix0, &e0);
     }
     else if (match(24, "aWait(!!**0);", pc)) {
-      exprPutIc(0, 1, OpWait, &e0);
+      exprPutIcX86(0, 1, call_aWait, &e0);
+      putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     }
     else if (match(25, "aFillRect0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpFilRct0, &e0);
+      exprPutIcX86(0, 5, call_aFillRct0, &e0);
     }
     else if (match(26, "aDrawStr0(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpDrwStr0, &e0);
+      exprPutIcX86(0, 5, call_aDrawStr0, &e0);
     }
     else if (match(27, "gprintDec(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4, !!**5);", pc)) {
-      exprPutIc(0, 6, OpGprDec, &e0);
+      exprPutIcX86(0, 6, gprintDec, &e0);
     }
     else if (match(28, "bitblt(!!***8, !!**0, !!**1, !!**2, !!**3, !!**4);", pc)) {
-      exprPutIc(0, 5, OpBitBlt, &e0);
+      exprPutIcX86(0, 5, bitblit, &e0);
     }
     else if (match(29, "printTime();", pc)) { // time;と同じ（C言語っぽく書けるようにした）
-      exprPutIc(0, 0, OpTime, &e0);
+      exprPutIcX86(0, 0, printElapsedTime, &e0);
     }
     else if (match(30, "void aMain() {", pc)) {
       blockDepth += BLOCK_INFO_UNIT_SIZE;
@@ -1157,6 +1238,7 @@ int compile(String sourceCode)
     printf("block nesting error: blockDepth=%d, loopDepth=%d, pc=%d, nTokens=%d\n", blockDepth, loopDepth, pc, nTokens);
     return -1;
   }
+  defLabel(toExit);
   dumpEnd = ip;
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
   unsigned char *end = ip, *src, *dest;
@@ -1189,6 +1271,8 @@ int run(String sourceCode)
     void (*exec)() = (void (*)()) instructions;
     t0 = clock();
     exec();
+    if (win != NULL)
+      aFlushAll(win);
   }
   else {
     int nBytes = dumpEnd - dumpBegin;
