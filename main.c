@@ -674,6 +674,24 @@ int bitblit(int xsiz, int ysiz, int x0, int y0, int *ary)
   }
 }
 
+// array
+
+AInt *aryNew(int nElems)
+{
+  AInt *ary = malloc(nElems * sizeof(AInt));
+  if (ary == NULL) {
+    printf("failed to allocate memory\n");
+    exit(1);
+  }
+  memset((char *) ary, 0, nElems * sizeof(AInt));
+  return ary;
+}
+
+void aryInit(AInt *ary, AInt *ip, int nElems)
+{
+  memcpy((char *) ary, (char *) ip, nElems * sizeof(AInt));
+}
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
@@ -830,20 +848,32 @@ int evalExpression(int precedenceLevel)
       putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
     else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
-      int op;
       e1 = er;
       e0 = expression(0);
       epc = nextPc;
       if (tokenCodes[epc] == Assigne && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assigne)))) {
-        op = OpArySet;
         ++epc;
         er = evalExpression(encountered);
+        //                                               base       index
+        putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[er], 0);
+        /*
+          8b_%2m0  -> mov r/m16/32,%eax
+          8b_%0m2  -> mov r/m16/32,%edx
+          8b_%1m1  -> mov r/m16/32,%ecx
+          89_04_8a -> mov %eax,(%edx,%ecx,4)
+        */
       }
       else {
-        op = OpAryGet;
         er = tmpAlloc();
+        //                                               base       index
+        putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[er], 0);
+        /*
+          8b_%0m2  -> mov r/m16/32,%edx
+          8b_%1m1  -> mov r/m16/32,%ecx
+          8b_04_8a -> mov (%edx,%ecx,4),%eax
+          89_%2m0  -> mov %eax,r/m16/32
+        */
       }
-      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
@@ -1143,11 +1173,18 @@ int compile(String sourceCode)
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
-      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+      //                                                 base               index
+      putIcX86("8b_%1m0; 89_44_24_00; e8_%2r; 89_%0m0;", &vars[tc[wpc[0]]], &vars[e2], (IntPtr) aryNew, 0);
+      /*
+        8b_%1m0     -> mov r/m16/32,%eax
+        89_44_24_00 -> mov %eax,0x0(%esp)
+        e8_%2r      -> call rel16/32 <aryNew>
+        89_%0m0     -> mov %eax,r/m16/32
+      */
     }
     else if (match(22, "int !!*0[!!**2] = {", pc)) {
       e2 = expression(2);
-      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+      putIcX86("8b_%1m0; 89_44_24_00; e8_%2r; 89_%0m0;", &vars[tc[wpc[0]]], &vars[e2], (IntPtr) aryNew, 0);
 
       int pc, nElems = 0;
       for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
@@ -1169,7 +1206,17 @@ int compile(String sourceCode)
         ary[nElems] = vars[tc[pc]];
         ++nElems;
       }
-      putIc(OpAryInit, &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, 0);
+      putIcX86("8b_%0m0; 89_44_24_00; b8_%1i; 89_44_24_04; b8_%2i; 89_44_24_08; e8_%3r;",
+          &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, (IntPtr) aryInit);
+      /*
+        8b_%0m0     -> mov r/m16/32,%eax       # 引数3
+        89_44_24_00 -> mov %eax,0x0(%esp)
+        b8_%1i      -> mov imm16/32,%eax
+        89_44_24_04 -> mov %eax,0x4(%esp)      # 引数2
+        b8_%2i      -> mov imm16/32,%eax
+        89_44_24_08 -> mov %eax,0x8(%esp)      # 引数1
+        e8_%3r      -> call rel16/32 <aryInit>
+      */
       nextPc = pc + 2; // } と ; の分
     }
     else if (match(23, "aSetPix0(!!***8, !!**0, !!**1, !!**2);", pc)) {
