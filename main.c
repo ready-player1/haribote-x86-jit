@@ -381,13 +381,6 @@ inline static String getOpBin(int tokenCode)
   return opBins[tokenCode - Equal];
 }
 
-void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
-{
-  printf("putIc function will be removed in a future version\n");
-  exit(1);
-}
-
-
 // 渡された文字が16進数に使える文字なら、それを0-15の数に変換して返す
 char getHex(char ch)
 {
@@ -611,7 +604,6 @@ int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを
 
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
-int exprPutIc(int er, int len, int op, int *err);
 int exprPutIcX86(int er, int len, void *fn, int *err);
 
 enum notationStyle { Prefix = 0, Infix };
@@ -913,13 +905,7 @@ enum blockType { IfBlock = 1, ForBlock, MainFnBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
 enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
-// lenで渡した数の式を評価し、その結果を使ってputIcをする
-int exprPutIc(int er, int len, int op, int *err)
-{
-  printf("exprPutIc function will be removed in a future version\n");
-  exit(1);
-}
-
+// lenで渡した数の式を評価し、その結果を使ってputIcX86をする
 int exprPutIcX86(int er, int len, void *fn, int *err)
 {
   int e[9] = {0};
