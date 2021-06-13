@@ -359,92 +359,6 @@ int jp;
 
 unsigned char *dumpBegin, *dumpEnd;
 
-enum opcode {
-  OpCpy = 0,
-  OpCeq,
-  OpCne,
-  OpClt,
-  OpCge,
-  OpCle,
-  OpCgt,
-  OpAdd,
-  OpSub,
-  OpMul,
-  OpDiv,
-  OpMod,
-  OpBand,
-  OpShr,
-  OpAnd,
-  OpAdd1,
-  OpNeg,
-  OpGoto,
-  OpJeq,
-  OpJne,
-  OpJlt,
-  OpJge,
-  OpJle,
-  OpJgt,
-  OpLop,
-  OpPrint,
-  OpTime,
-  OpPrints,
-  OpAryNew,
-  OpAryInit,
-  OpArySet,
-  OpAryGet,
-  OpPrm,
-  OpOpnWin,
-  OpSetPix0,
-  OpM64s,
-  OpRgb8,
-  OpWait,
-  OpXorShift,
-  OpGetPix,
-  OpFilRct0,
-  OpF16Sin,
-  OpF16Cos,
-  OpInkey,
-  OpDrwStr0,
-  OpGprDec,
-  OpBitBlt,
-  OpEnd
-};
-
-int correspondingTerms[128] = {-1}; // in token codes and opcodes for infix operators
-
-void initCorrespondingTerms() {
-  correspondingTerms[Multi]      = OpMul;
-  correspondingTerms[Divi]       = OpDiv;
-  correspondingTerms[Mod]        = OpMod;
-  correspondingTerms[Plus]       = OpAdd;
-  correspondingTerms[Minus]      = OpSub;
-  correspondingTerms[ShiftRight] = OpShr;
-  correspondingTerms[Les]        = OpClt;
-  correspondingTerms[LesEq]      = OpCle;
-  correspondingTerms[Gtr]        = OpCgt;
-  correspondingTerms[GtrEq]      = OpCge;
-  correspondingTerms[Equal]      = OpCeq;
-  correspondingTerms[NotEq]      = OpCne;
-  correspondingTerms[BitwiseAnd] = OpBand;
-  correspondingTerms[And]        = OpAnd;
-  correspondingTerms[Assigne]    = OpCpy;
-};
-
-int getOpcode(int tokenCode) // for infix operators
-{
-  if (tokenCode < 0 ||  EndOfKeys <= tokenCode) {
-    printf("tokenCode must be greater than 0 and less than %d, got %d\n", EndOfKeys, tokenCode);
-    exit(1);
-  }
-
-  int op = correspondingTerms[tokenCode];
-  if (op == -1) {
-    printf("no corresponding opcode for %s token\n", tokenStrs[tokenCode]);
-    exit(1);
-  }
-  return op;
-}
-
 String opBins[] = { // 二項演算子のための機械語
   "8b_%1m0; 3b_%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",           // Equal
   "8b_%1m0; 3b_%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",           // NotEq
@@ -466,13 +380,6 @@ inline static String getOpBin(int tokenCode)
 {
   return opBins[tokenCode - Equal];
 }
-
-void putIc(int op, IntPtr p1, IntPtr p2, IntPtr p3, IntPtr p4)
-{
-  printf("putIc function will be removed in a future version\n");
-  exit(1);
-}
-
 
 // 渡された文字が16進数に使える文字なら、それを0-15の数に変換して返す
 char getHex(char ch)
@@ -674,12 +581,29 @@ int bitblit(int xsiz, int ysiz, int x0, int y0, int *ary)
   }
 }
 
+// array
+
+AInt *aryNew(int nElems)
+{
+  AInt *ary = malloc(nElems * sizeof(AInt));
+  if (ary == NULL) {
+    printf("failed to allocate memory\n");
+    exit(1);
+  }
+  memset((char *) ary, 0, nElems * sizeof(AInt));
+  return ary;
+}
+
+void aryInit(AInt *ary, AInt *ip, int nElems)
+{
+  memcpy((char *) ary, (char *) ip, nElems * sizeof(AInt));
+}
+
 #define LOWEST_PRECEDENCE 99
 int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを指す）, その式の直後のトークンを指す
 
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
-int exprPutIc(int er, int len, int op, int *err);
 int exprPutIcX86(int er, int len, void *fn, int *err);
 
 enum notationStyle { Prefix = 0, Infix };
@@ -830,20 +754,32 @@ int evalExpression(int precedenceLevel)
       putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
     else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
-      int op;
       e1 = er;
       e0 = expression(0);
       epc = nextPc;
       if (tokenCodes[epc] == Assigne && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assigne)))) {
-        op = OpArySet;
         ++epc;
         er = evalExpression(encountered);
+        //                                               base       index
+        putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[er], 0);
+        /*
+          8b_%2m0  -> mov r/m16/32,%eax
+          8b_%0m2  -> mov r/m16/32,%edx
+          8b_%1m1  -> mov r/m16/32,%ecx
+          89_04_8a -> mov %eax,(%edx,%ecx,4)
+        */
       }
       else {
-        op = OpAryGet;
         er = tmpAlloc();
+        //                                               base       index
+        putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[er], 0);
+        /*
+          8b_%0m2  -> mov r/m16/32,%edx
+          8b_%1m1  -> mov r/m16/32,%ecx
+          8b_04_8a -> mov (%edx,%ecx,4),%eax
+          89_%2m0  -> mov %eax,r/m16/32
+        */
       }
-      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
@@ -969,13 +905,7 @@ enum blockType { IfBlock = 1, ForBlock, MainFnBlock };
 enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
 enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
-// lenで渡した数の式を評価し、その結果を使ってputIcをする
-int exprPutIc(int er, int len, int op, int *err)
-{
-  printf("exprPutIc function will be removed in a future version\n");
-  exit(1);
-}
-
+// lenで渡した数の式を評価し、その結果を使ってputIcX86をする
 int exprPutIcX86(int er, int len, void *fn, int *err)
 {
   int e[9] = {0};
@@ -1143,11 +1073,18 @@ int compile(String sourceCode)
     }
     else if (match(21, "int !!*0[!!**2];", pc)) {
       e2 = expression(2);
-      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+      //                                                 base               index
+      putIcX86("8b_%1m0; 89_44_24_00; e8_%2r; 89_%0m0;", &vars[tc[wpc[0]]], &vars[e2], (IntPtr) aryNew, 0);
+      /*
+        8b_%1m0     -> mov r/m16/32,%eax
+        89_44_24_00 -> mov %eax,0x0(%esp)
+        e8_%2r      -> call rel16/32 <aryNew>
+        89_%0m0     -> mov %eax,r/m16/32
+      */
     }
     else if (match(22, "int !!*0[!!**2] = {", pc)) {
       e2 = expression(2);
-      putIc(OpAryNew, &vars[tc[wpc[0]]], &vars[e2], 0, 0);
+      putIcX86("8b_%1m0; 89_44_24_00; e8_%2r; 89_%0m0;", &vars[tc[wpc[0]]], &vars[e2], (IntPtr) aryNew, 0);
 
       int pc, nElems = 0;
       for (pc = nextPc; tc[pc] != Rbrace; ++pc) {
@@ -1169,7 +1106,17 @@ int compile(String sourceCode)
         ary[nElems] = vars[tc[pc]];
         ++nElems;
       }
-      putIc(OpAryInit, &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, 0);
+      putIcX86("8b_%0m0; 89_44_24_00; b8_%1i; 89_44_24_04; b8_%2i; 89_44_24_08; e8_%3r;",
+          &vars[tc[wpc[0]]], (IntPtr) ary, (IntPtr) nElems, (IntPtr) aryInit);
+      /*
+        8b_%0m0     -> mov r/m16/32,%eax       # 引数3
+        89_44_24_00 -> mov %eax,0x0(%esp)
+        b8_%1i      -> mov imm16/32,%eax
+        89_44_24_04 -> mov %eax,0x4(%esp)      # 引数2
+        b8_%2i      -> mov imm16/32,%eax
+        89_44_24_08 -> mov %eax,0x8(%esp)      # 引数1
+        e8_%3r      -> call rel16/32 <aryInit>
+      */
       nextPc = pc + 2; // } と ; の分
     }
     else if (match(23, "aSetPix0(!!***8, !!**0, !!**1, !!**2);", pc)) {
@@ -1304,7 +1251,6 @@ void aMain()
 
   instructions = mallocRWX(1024 * 1024);
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
-  initCorrespondingTerms();
 
   if (aArgc >= 2) {
     if (loadText((String) aArgv[1], text, 10000) != 0)
