@@ -359,92 +359,6 @@ int jp;
 
 unsigned char *dumpBegin, *dumpEnd;
 
-enum opcode {
-  OpCpy = 0,
-  OpCeq,
-  OpCne,
-  OpClt,
-  OpCge,
-  OpCle,
-  OpCgt,
-  OpAdd,
-  OpSub,
-  OpMul,
-  OpDiv,
-  OpMod,
-  OpBand,
-  OpShr,
-  OpAnd,
-  OpAdd1,
-  OpNeg,
-  OpGoto,
-  OpJeq,
-  OpJne,
-  OpJlt,
-  OpJge,
-  OpJle,
-  OpJgt,
-  OpLop,
-  OpPrint,
-  OpTime,
-  OpPrints,
-  OpAryNew,
-  OpAryInit,
-  OpArySet,
-  OpAryGet,
-  OpPrm,
-  OpOpnWin,
-  OpSetPix0,
-  OpM64s,
-  OpRgb8,
-  OpWait,
-  OpXorShift,
-  OpGetPix,
-  OpFilRct0,
-  OpF16Sin,
-  OpF16Cos,
-  OpInkey,
-  OpDrwStr0,
-  OpGprDec,
-  OpBitBlt,
-  OpEnd
-};
-
-int correspondingTerms[128] = {-1}; // in token codes and opcodes for infix operators
-
-void initCorrespondingTerms() {
-  correspondingTerms[Multi]      = OpMul;
-  correspondingTerms[Divi]       = OpDiv;
-  correspondingTerms[Mod]        = OpMod;
-  correspondingTerms[Plus]       = OpAdd;
-  correspondingTerms[Minus]      = OpSub;
-  correspondingTerms[ShiftRight] = OpShr;
-  correspondingTerms[Les]        = OpClt;
-  correspondingTerms[LesEq]      = OpCle;
-  correspondingTerms[Gtr]        = OpCgt;
-  correspondingTerms[GtrEq]      = OpCge;
-  correspondingTerms[Equal]      = OpCeq;
-  correspondingTerms[NotEq]      = OpCne;
-  correspondingTerms[BitwiseAnd] = OpBand;
-  correspondingTerms[And]        = OpAnd;
-  correspondingTerms[Assigne]    = OpCpy;
-};
-
-int getOpcode(int tokenCode) // for infix operators
-{
-  if (tokenCode < 0 ||  EndOfKeys <= tokenCode) {
-    printf("tokenCode must be greater than 0 and less than %d, got %d\n", EndOfKeys, tokenCode);
-    exit(1);
-  }
-
-  int op = correspondingTerms[tokenCode];
-  if (op == -1) {
-    printf("no corresponding opcode for %s token\n", tokenStrs[tokenCode]);
-    exit(1);
-  }
-  return op;
-}
-
 String opBins[] = { // 二項演算子のための機械語
   "8b_%1m0; 3b_%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",           // Equal
   "8b_%1m0; 3b_%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",           // NotEq
@@ -1351,7 +1265,6 @@ void aMain()
 
   instructions = mallocRWX(1024 * 1024);
   initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
-  initCorrespondingTerms();
 
   if (aArgc >= 2) {
     if (loadText((String) aArgv[1], text, 10000) != 0)
