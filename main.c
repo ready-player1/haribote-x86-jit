@@ -404,6 +404,39 @@ void put32(unsigned char *p, unsigned i)
   p[3] = (i >> 24) & 0xff; // 4バイト目に、ビット24～31の内容を書き込む
 }
 
+#define N_REGVAR 4
+
+IntPtr regVarTable[N_REGVAR]; // レジスタ変数の割り当て状況を記録する配列
+/*
+  インデックスはレジスタ変数番号
+
+  要素の値は次のどちらか
+  レジスタ変数を割り当てている場合   -> regVarSaveLoad関数で、レジスタ変数の値を書き戻す／読み込むメモリのアドレス
+  レジスタ変数を割り当てていない場合 -> 0
+*/
+
+// もしvarがレジスタに割り当てられていれば、0〜3を返す。そうでなければ-1を返す
+int getRegVarNum(IntPtr var)
+{
+  for (int i = 0; i < N_REGVAR; ++i) {
+    if (regVarTable[i] == var)
+      return i;
+  }
+  return -1;
+}
+
+static inline int isRegVar(int regVarNum)
+{
+  return regVarNum >= 0;
+}
+
+int regVarNum2regCode[N_REGVAR] = { // レジスタ変数番号から、レジスタ番号に変換する配列
+  3, // ebx
+  5, // ebp
+  6, // esi
+  7  // edi
+};
+
 void decodeX86(String str, IntPtr *operands)
 {
   for (int pos = 0; str[pos] != 0;) {
@@ -450,9 +483,16 @@ void decodeX86(String str, IntPtr *operands)
           https://www.intel.co.jp/content/dam/www/public/ijkk/jp/ja/documents/developer/IA32_Arh_Dev_Man_Vol2A_i.pdf#G8.6121
         */
         reg = str[pos + 3] - '0';
-        *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
-        put32(ip + 1, (unsigned) operands[i]);
-        ip += 5;
+        int regVarNum = getRegVarNum(operands[i]);
+        if (isRegVar(regVarNum)) {
+          *ip = 0xc0 | (reg << 3) | regVarNum2regCode[regVarNum]; // mod=11, reg=???, r/m=???
+          ++ip;
+        }
+        else {
+          *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
+          put32(ip + 1, (unsigned) operands[i]);
+          ip += 5;
+        }
         pos += 4;
         continue;
       case 'i': // int
@@ -491,6 +531,18 @@ void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3)
   operands[2] = p2;
   operands[3] = p3;
   decodeX86(instructionStr, operands);
+}
+
+enum { RvSave = 0x89, RvLoad = 0x8b };
+
+void regVarSaveLoad(int op)
+{
+  for (int regVarNum = 0; regVarNum < N_REGVAR; ++regVarNum) {
+    if (regVarTable[regVarNum] != 0) {
+      putIcX86("%0c_%1c_%2i;",
+          (IntPtr) op, (IntPtr) ( 0x05 | ((unsigned) regVarNum2regCode[regVarNum] << 3) ), regVarTable[regVarNum], 0);
+    }
+  }
 }
 
 #define N_TMPS 10
@@ -941,6 +993,7 @@ int compile(String sourceCode)
   ip = instructions;
   jp = 0;
   putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
+  regVarSaveLoad(RvLoad); // 前回実行時のレジスタ変数の値を引き継ぐ
   dumpBegin = ip;
 
   for (int i = 0; i < N_TMPS; ++i)
@@ -1169,6 +1222,31 @@ int compile(String sourceCode)
       }
       nextPc = pc + 1;
     }
+    else if (match(37, "regVar(!!*0", pc)) {
+      int regVarNum = tc[wpc[0]] - Zero;
+      int firstNum = regVarNum;
+
+      IntPtr tmp[N_REGVAR];
+      int pc;
+      for (pc = nextPc; tc[pc] != Rparen; ++pc) {
+        if (pc >= nTokens)
+          goto err;
+        if (tc[pc] == Comma)
+          continue;
+
+        if (0 <= regVarNum && regVarNum < N_REGVAR)
+          tmp[regVarNum] = tc[pc] == Zero ? 0 : &vars[tc[pc]];
+        ++regVarNum;
+      }
+
+      regVarSaveLoad(RvSave);
+      int lastNum = regVarNum;
+      for (regVarNum = firstNum; regVarNum < lastNum; ++regVarNum)
+        regVarTable[regVarNum] = tmp[regVarNum];
+      regVarSaveLoad(RvLoad);
+
+      nextPc = pc + 2; // ) と ; の分
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
@@ -1187,6 +1265,7 @@ int compile(String sourceCode)
   }
   defLabel(toExit);
   dumpEnd = ip;
+  regVarSaveLoad(RvSave); // 次回実行時にレジスタ変数の値を引き継ぐ
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
   unsigned char *end = ip, *src, *dest;
   for (int i = 0; i < jp; ++i) { // ジャンプ命令の最適化
