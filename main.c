@@ -1084,7 +1084,10 @@ int compile(String sourceCode)
     int *curBlock = &blockInfo[blockDepth];
     int e0 = 0, e2 = 0;
     if (match(1, "!!*0 = !!*1;", pc)) {
-      putIcX86("8b_%1m0; 89_%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+      if (isRegVar(getRegVarNum(&vars[tc[wpc[0]]])))
+        putIcX86("%0L00; 8b_&<<3:%1m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+      else
+        putIcX86("%1L11; 89_&<<3:%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
     else if (match(10, "!!*0 = !!*1 + 1; if (!!*2 < !!*3) goto !!*4;", pc) && tc[wpc[0]] == tc[wpc[1]] && tc[wpc[0]] == tc[wpc[2]]) {
       // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
