@@ -437,21 +437,63 @@ int regVarNum2regCode[N_REGVAR] = { // レジスタ変数番号から、レジ�
   7  // edi
 };
 
+void putModRM(unsigned reg, unsigned addVal, IntPtr var)
+{
+  int regVarNum = getRegVarNum(var);
+  if (isRegVar(regVarNum)) {
+    *ip = ( 0xc0 | (reg << 3) | regVarNum2regCode[regVarNum] ) + addVal; // mod=11, reg=???, r/m=???
+    ++ip;
+  }
+  else {
+    *ip = ( 0x05 | (reg << 3) ) + addVal; // mod=00, reg=???, r/m=101
+    put32(ip + 1, (unsigned) var);
+    ip += 5;
+  }
+}
+
 void decodeX86(String str, IntPtr *operands)
 {
+  unsigned reg = 0; // ModR/Mバイトのregフィールドの値
+  unsigned addVal = 0, regCode; // 命令に加算する値, addValの値を求める際に用いるレジスタ番号
+
   for (int pos = 0; str[pos] != 0;) {
     if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':' || str[pos] == ';')
       ++pos;
     else if (getHex(str[pos]) >= 0 && getHex(str[pos + 1]) >= 0) { // 16進数2桁（opcode）
-      *ip = ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]);
+      *ip = ( ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]) ) + addVal;
       ++ip;
+      addVal = 0;
       pos += 2;
+    }
+    else if (str[pos] == '&') {
+      /*
+        「&<<i:」と「&i:」はプリフィックスで、続く命令に付加する。このプリフィックスは
+        続く命令をinstructionsに格納する際に、命令にaddValの値を加算する。addValの値は
+        regCodeの値（レジスタ番号）に次の演算を適用して求める。
+
+        プリフィックスの書式が&<<i:の場合
+        regCodeの値（レジスタ番号）をiだけ左シフトして求める。
+
+        プリフィックス書式が&i:の場合
+        regCodeの値（レジスタ番号）にiを掛けて求める。
+
+        regCodeのデフォルト値は0（eax）なので、どちらのプリフィックスの書式でも
+        regCodeの値が0のときはこのプリフィックスは無効になる。
+      */
+      if (str[pos + 1] == '<' && str[pos + 2] == '<') {
+        addVal = (unsigned) regCode << (str[pos + 3] - '0');
+        pos += 4;
+      }
+      else {
+        addVal = (unsigned) regCode * (str[pos + 1] - '0');
+        pos += 2;
+      }
     }
     else if (str[pos] == '%') {
       int i = str[pos + 1] - '0'; // 参照する追加引数の番号
 
       switch (str[pos + 2]) {
-      unsigned reg;
+      int j, k;
       case 'm': // ModR/Mバイト
         /*
           ModR/Mバイトは、オペランドを参照する多くの命令でオペコードの次に置くことになっている1バイトで、
@@ -483,18 +525,53 @@ void decodeX86(String str, IntPtr *operands)
           https://www.intel.co.jp/content/dam/www/public/ijkk/jp/ja/documents/developer/IA32_Arh_Dev_Man_Vol2A_i.pdf#G8.6121
         */
         reg = str[pos + 3] - '0';
-        int regVarNum = getRegVarNum(operands[i]);
-        if (isRegVar(regVarNum)) {
-          *ip = 0xc0 | (reg << 3) | regVarNum2regCode[regVarNum]; // mod=11, reg=???, r/m=???
-          ++ip;
-        }
-        else {
-          *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
-          put32(ip + 1, (unsigned) operands[i]);
-          ip += 5;
-        }
+        putModRM(reg, addVal, operands[i]);
+        addVal = 0;
         pos += 4;
         continue;
+      case 'L': // Load
+        /*
+          %拡張命令（L）は、メモリ／レジスタ変数からの読み込みについて
+          「%iLjk」と書き、オペランドi, j, kの値に基づいて条件分岐を行い、
+          レジスタ変数を使う場合とそうでない場合とで処理を分岐させる。
+        */
+        j = str[pos + 3] - '0'; // 参照する追加引数の番号
+        k = str[pos + 4] - '0'; // 参照する追加引数の番号
+
+        int regVarNum = getRegVarNum(operands[j]);
+        if (isRegVar(regVarNum) && operands[i] == operands[j]) {
+          regCode = regVarNum2regCode[regVarNum];
+        }
+        else if (isRegVar(regVarNum) && operands[j] != operands[k]) {
+          reg = regCode = regVarNum2regCode[regVarNum];
+          *ip = 0x8b;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          addVal = 0;
+        }
+        else {
+          reg = regCode = 0;
+          *ip = 0x8b;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          addVal = 0;
+        }
+        pos += 5;
+        continue;
+      case 'S': // Store
+        /*
+          %拡張命令（S）は、メモリ／レジスタ変数への書き込みについて
+          「%0S」と書き、もしregCodeが0（eax）であれば「89_%0m0;」と同じ
+          動作をするが、0以外であればinstructionsに何も書き込まない。
+       */
+        if (regCode == 0) {
+          reg = 0;
+          *ip = 0x89;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          regCode = 0;
+        }
+        break;
       case 'i': // int
         put32(ip, (unsigned) operands[i]);
         ip += 4;
