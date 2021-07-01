@@ -1090,11 +1090,19 @@ int compile(String sourceCode)
         putIcX86("%1L11; 89_&<<3:%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
     else if (match(10, "!!*0 = !!*1 + 1; if (!!*2 < !!*3) goto !!*4;", pc) && tc[wpc[0]] == tc[wpc[1]] && tc[wpc[0]] == tc[wpc[2]]) {
-      // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
-      putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
+      putIcX86("%1L11; &<<0:40; %1S; 3b_&<<3:%2m0; 0f_8c_%0l;", &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
+      /*
+        ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+        8b_%1m0   -> mov r/m16/32,%eax
+        40        -> inc %eax
+        89_%1m0   -> mov %eax,r/m16/32
+        3b_%2m0   -> cmp r/m16/32,%eax
+        0f_8c_%0l -> jl rel16/32
+      */
     }
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
-      putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[tc[wpc[0]]], 0, 0, 0);
+      putIcX86("%0L00; &<<0:40; %0S;", &vars[tc[wpc[0]]], 0, 0, 0);
     }
     else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
       putIcX86(getOpBin(tc[wpc[2]]), &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
