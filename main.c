@@ -1355,6 +1355,16 @@ int compile(String sourceCode)
 
       nextPc = pc + 2; // ) と ; の分
     }
+    else if (match(38, "!!*3 = mul64shr(!!*0, !!*1, !!*2);", pc) && strtol(ts[tc[tc[wpc[2]]]], 0, 0) > 0) {
+      putIcX86("8b_%0m0; f7_%1m5; 0f_ac_d0_%2c; 89_%3m0;",
+          &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], (IntPtr) strtol(ts[tc[wpc[2]]], 0, 0), &vars[tc[wpc[3]]]);
+      /*
+        8b_%0m0      -> mov r/m16/32,%eax
+        f7_%1m5      -> imul r/m16/32      # eaxに%mで指定した値を掛け算して、結果をedx:eaxに入れる
+        0f_ac_d0_%2c -> shrd %cl,%edx,%eax # edx:eaxの64bitをecxだけ右シフトする。でもeaxしか更新されない（edxはそのまま）
+        89_%3m0      -> mov %eax,r/m16/32
+      */
+    }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
     }
