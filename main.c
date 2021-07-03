@@ -360,19 +360,19 @@ int jp;
 unsigned char *dumpBegin, *dumpEnd;
 
 String opBins[] = { // 二項演算子のための機械語
-  "8b_%1m0; 3b_%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",           // Equal
-  "8b_%1m0; 3b_%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",           // NotEq
-  "8b_%1m0; 3b_%2m0; 0f_9c_c0; 0f_b6_c0; 89_%0m0;",           // Les
-  "8b_%1m0; 3b_%2m0; 0f_9d_c0; 0f_b6_c0; 89_%0m0;",           // GtrEq
-  "8b_%1m0; 3b_%2m0; 0f_9e_c0; 0f_b6_c0; 89_%0m0;",           // LesEq
-  "8b_%1m0; 3b_%2m0; 0f_9f_c0; 0f_b6_c0; 89_%0m0;",           // Gtr
-  "8b_%1m0; 03_%2m0; 89_%0m0;",                               // Plus
-  "8b_%1m0; 2b_%2m0; 89_%0m0;",                               // Minus
-  "8b_%1m0; 0f_af_%2m0; 89_%0m0;",                            // Multi
+  "%1L11; 3b_&<<3:%2m0; 0f_94_c0; 0f_b6_c0; 89_%0m0;",        // Equal
+  "%1L11; 3b_&<<3:%2m0; 0f_95_c0; 0f_b6_c0; 89_%0m0;",        // NotEq
+  "%1L11; 3b_&<<3:%2m0; 0f_9c_c0; 0f_b6_c0; 89_%0m0;",        // Les
+  "%1L11; 3b_&<<3:%2m0; 0f_9d_c0; 0f_b6_c0; 89_%0m0;",        // GtrEq
+  "%1L11; 3b_&<<3:%2m0; 0f_9e_c0; 0f_b6_c0; 89_%0m0;",        // LesEq
+  "%1L11; 3b_&<<3:%2m0; 0f_9f_c0; 0f_b6_c0; 89_%0m0;",        // Gtr
+  "%1L02; 03_&<<3:%2m0; %0S;",                                // Plus
+  "%1L02; 2b_&<<3:%2m0; %0S;",                                // Mnus
+  "%1L02; 0f_af_&<<3:%2m0; %0S;",                             // Multi
   "8b_%1m0; 99; f7_%2m7; 89_%0m0;",                           // Divi
   "8b_%1m0; 99; f7_%2m7; 89_%0m2;",                           // Mod
-  "8b_%1m0; 23_%2m0; 89_%0m0;",                               // BitwiseAnd
-  "8b_%1m0; 8b_%2m1; d3_f8; 89_%0m0;",                        // ShiftRight
+  "%1L02; 23_&<<3:%2m0; %0S;",                                // BitwiseAnd
+  "%1L02; 8b_%2m1; d3_&<<0:f8; %0S;",                         // ShiftRight
   "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // And
 };
 
@@ -437,21 +437,63 @@ int regVarNum2regCode[N_REGVAR] = { // レジスタ変数番号から、レジ�
   7  // edi
 };
 
+void putModRM(unsigned reg, unsigned addVal, IntPtr var)
+{
+  int regVarNum = getRegVarNum(var);
+  if (isRegVar(regVarNum)) {
+    *ip = ( 0xc0 | (reg << 3) | regVarNum2regCode[regVarNum] ) + addVal; // mod=11, reg=???, r/m=???
+    ++ip;
+  }
+  else {
+    *ip = ( 0x05 | (reg << 3) ) + addVal; // mod=00, reg=???, r/m=101
+    put32(ip + 1, (unsigned) var);
+    ip += 5;
+  }
+}
+
 void decodeX86(String str, IntPtr *operands)
 {
+  unsigned reg = 0; // ModR/Mバイトのregフィールドの値
+  unsigned addVal = 0, regCode; // 命令に加算する値, addValの値を求める際に用いるレジスタ番号
+
   for (int pos = 0; str[pos] != 0;) {
     if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':' || str[pos] == ';')
       ++pos;
     else if (getHex(str[pos]) >= 0 && getHex(str[pos + 1]) >= 0) { // 16進数2桁（opcode）
-      *ip = ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]);
+      *ip = ( ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]) ) + addVal;
       ++ip;
+      addVal = 0;
       pos += 2;
+    }
+    else if (str[pos] == '&') {
+      /*
+        「&<<i:」と「&i:」はプリフィックスで、続く命令に付加する。このプリフィックスは
+        続く命令をinstructionsに格納する際に、命令にaddValの値を加算する。addValの値は
+        regCodeの値（レジスタ番号）に次の演算を適用して求める。
+
+        プリフィックスの書式が&<<i:の場合
+        regCodeの値（レジスタ番号）をiだけ左シフトして求める。
+
+        プリフィックス書式が&i:の場合
+        regCodeの値（レジスタ番号）にiを掛けて求める。
+
+        regCodeのデフォルト値は0（eax）なので、どちらのプリフィックスの書式でも
+        regCodeの値が0のときはこのプリフィックスは無効になる。
+      */
+      if (str[pos + 1] == '<' && str[pos + 2] == '<') {
+        addVal = (unsigned) regCode << (str[pos + 3] - '0');
+        pos += 4;
+      }
+      else {
+        addVal = (unsigned) regCode * (str[pos + 1] - '0');
+        pos += 2;
+      }
     }
     else if (str[pos] == '%') {
       int i = str[pos + 1] - '0'; // 参照する追加引数の番号
 
       switch (str[pos + 2]) {
-      unsigned reg;
+      int j, k;
       case 'm': // ModR/Mバイト
         /*
           ModR/Mバイトは、オペランドを参照する多くの命令でオペコードの次に置くことになっている1バイトで、
@@ -483,18 +525,53 @@ void decodeX86(String str, IntPtr *operands)
           https://www.intel.co.jp/content/dam/www/public/ijkk/jp/ja/documents/developer/IA32_Arh_Dev_Man_Vol2A_i.pdf#G8.6121
         */
         reg = str[pos + 3] - '0';
-        int regVarNum = getRegVarNum(operands[i]);
-        if (isRegVar(regVarNum)) {
-          *ip = 0xc0 | (reg << 3) | regVarNum2regCode[regVarNum]; // mod=11, reg=???, r/m=???
-          ++ip;
-        }
-        else {
-          *ip = 0x05 | (reg << 3); // mod=00, reg=???, r/m=101
-          put32(ip + 1, (unsigned) operands[i]);
-          ip += 5;
-        }
+        putModRM(reg, addVal, operands[i]);
+        addVal = 0;
         pos += 4;
         continue;
+      case 'L': // Load
+        /*
+          %拡張命令（L）は、メモリ／レジスタ変数からの読み込みについて
+          「%iLjk」と書き、オペランドi, j, kの値に基づいて条件分岐を行い、
+          レジスタ変数を使う場合とそうでない場合とで処理を分岐させる。
+        */
+        j = str[pos + 3] - '0'; // 参照する追加引数の番号
+        k = str[pos + 4] - '0'; // 参照する追加引数の番号
+
+        int regVarNum = getRegVarNum(operands[j]);
+        if (isRegVar(regVarNum) && operands[i] == operands[j]) {
+          regCode = regVarNum2regCode[regVarNum];
+        }
+        else if (isRegVar(regVarNum) && operands[j] != operands[k]) {
+          reg = regCode = regVarNum2regCode[regVarNum];
+          *ip = 0x8b;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          addVal = 0;
+        }
+        else {
+          reg = regCode = 0;
+          *ip = 0x8b;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          addVal = 0;
+        }
+        pos += 5;
+        continue;
+      case 'S': // Store
+        /*
+          %拡張命令（S）は、メモリ／レジスタ変数への書き込みについて
+          「%0S」と書き、もしregCodeが0（eax）であれば「89_%0m0;」と同じ
+          動作をするが、0以外であればinstructionsに何も書き込まない。
+       */
+        if (regCode == 0) {
+          reg = 0;
+          *ip = 0x89;
+          ++ip;
+          putModRM(reg, addVal, operands[i]);
+          regCode = 0;
+        }
+        break;
       case 'i': // int
         put32(ip, (unsigned) operands[i]);
         ip += 4;
@@ -913,17 +990,29 @@ void ifgoto(int num, int conditionType, int label) {
 
   int *tc = tokenCodes, operator = tc[conditionBegin + 1];
   if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
-    // mov r/m16/32,%eax; cmp r/m16/32,%eax; jcc rel16/32;
-    putIcX86("8b_%2m0; 3b_%3m0; 0f_%0c_%1l;",
+    putIcX86("%2L22; 3b_&<<3:%3m0; 0f_%0c_%1l;",
         (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
         &vars[label],
         &vars[tc[conditionBegin]],
         &vars[tc[conditionBegin + 2]]);
+    /*
+      ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+      8b_%2m0    -> mov r/m16/32,%eax
+      3b_%3m0    -> cmp r/m16/32,%eax
+      0f_%0c_%1l -> jcc rel16/32
+    */
   }
   else {
     num = expression(num);
-    // mov %eax,r/m16/32; test %eax,%eax; jcc rel16/32;
-    putIcX86("8b_%2m0; 85_c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
+    putIcX86("%2L22; 85_&9:c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
+    /*
+      ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+      8b_%2m0    -> mov r/m16/32,%eax
+      85_c0      -> test %eax,%eax
+      0f_%0c_%1l -> jcc rel16/32
+    */
     tmpFree(num);
   }
 }
@@ -964,7 +1053,7 @@ int exprPutIcX86(int er, int len, void *fn, int *err)
   for (int i = 0; i < len; ++i) {
     if ((e[i] = expression(i)) < 0)
       *err = -1;
-    putIcX86("8b_%0m0; 89_44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
+    putIcX86("%0L00; 89_&<<3:44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
   }
 
   putIcX86("e8_%0r;", fn, 0, 0, 0); // call rel16/32 <fn>
@@ -1007,14 +1096,25 @@ int compile(String sourceCode)
     int *curBlock = &blockInfo[blockDepth];
     int e0 = 0, e2 = 0;
     if (match(1, "!!*0 = !!*1;", pc)) {
-      putIcX86("8b_%1m0; 89_%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+      if (isRegVar(getRegVarNum(&vars[tc[wpc[0]]])))
+        putIcX86("%0L00; 8b_&<<3:%1m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
+      else
+        putIcX86("%1L11; 89_&<<3:%0m0;", &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], 0, 0);
     }
     else if (match(10, "!!*0 = !!*1 + 1; if (!!*2 < !!*3) goto !!*4;", pc) && tc[wpc[0]] == tc[wpc[1]] && tc[wpc[0]] == tc[wpc[2]]) {
-      // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
-      putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
+      putIcX86("%1L11; &<<0:40; %1S; 3b_&<<3:%2m0; 0f_8c_%0l;", &vars[tc[wpc[4]]], &vars[tc[wpc[0]]], &vars[tc[wpc[3]]], 0);
+      /*
+        ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+        8b_%1m0   -> mov r/m16/32,%eax
+        40        -> inc %eax
+        89_%1m0   -> mov %eax,r/m16/32
+        3b_%2m0   -> cmp r/m16/32,%eax
+        0f_8c_%0l -> jl rel16/32
+      */
     }
     else if (match(9, "!!*0 = !!*1 + 1;", pc) && tc[wpc[0]] == tc[wpc[1]]) { // +1専用の命令
-      putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[tc[wpc[0]]], 0, 0, 0);
+      putIcX86("%0L00; &<<0:40; %0S;", &vars[tc[wpc[0]]], 0, 0, 0);
     }
     else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
       putIcX86(getOpBin(tc[wpc[2]]), &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
@@ -1086,8 +1186,16 @@ int compile(String sourceCode)
         ( (tc[wpc1] == tc[wpc2] && tc[wpc2 + 1] == PlusPlus) || (tc[wpc1] == tc[wpc2 + 1] && tc[wpc2] == PlusPlus) );
 
       if (isWpc1Les && isWpc2PlusPlus) {
-        // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
-        putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+        putIcX86("%1L11; &<<0:40; %1S; 3b_&<<3:%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+        /*
+          ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+          8b_%1m0   -> mov r/m16/32,%eax
+          40        -> inc %eax
+          89_%1m0   -> mov %eax,r/m16/32
+          3b_%2m0   -> cmp r/m16/32,%eax
+          0f_8c_%0l -> jl rel16/32
+        */
       }
       else {
         wpc   [1] = curBlock[ ForWpc1    ];
@@ -1246,6 +1354,16 @@ int compile(String sourceCode)
       regVarSaveLoad(RvLoad);
 
       nextPc = pc + 2; // ) と ; の分
+    }
+    else if (match(38, "!!*3 = mul64shr(!!*0, !!*1, !!*2);", pc) && strtol(ts[tc[tc[wpc[2]]]], 0, 0) > 0) {
+      putIcX86("8b_%0m0; f7_%1m5; 0f_ac_d0_%2c; 89_%3m0;",
+          &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], (IntPtr) strtol(ts[tc[wpc[2]]], 0, 0), &vars[tc[wpc[3]]]);
+      /*
+        8b_%0m0      -> mov r/m16/32,%eax
+        f7_%1m5      -> imul r/m16/32      # eaxに%mで指定した値を掛け算して、結果をedx:eaxに入れる
+        0f_ac_d0_%2c -> shrd %cl,%edx,%eax # edx:eaxの64bitをecxだけ右シフトする。でもeaxしか更新されない（edxはそのまま）
+        89_%3m0      -> mov %eax,r/m16/32
+      */
     }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
