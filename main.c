@@ -1053,7 +1053,7 @@ int exprPutIcX86(int er, int len, void *fn, int *err)
   for (int i = 0; i < len; ++i) {
     if ((e[i] = expression(i)) < 0)
       *err = -1;
-    putIcX86("8b_%0m0; 89_44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
+    putIcX86("%0L00; 89_&<<3:44_24_%1c;", &vars[e[i]], (IntPtr) (i * 4), 0, 0); // 89 44 24 ?? -> mov %eax,0x??(%esp)
   }
 
   putIcX86("e8_%0r;", fn, 0, 0, 0); // call rel16/32 <fn>
