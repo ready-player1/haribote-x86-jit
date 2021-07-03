@@ -990,17 +990,29 @@ void ifgoto(int num, int conditionType, int label) {
 
   int *tc = tokenCodes, operator = tc[conditionBegin + 1];
   if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
-    // mov r/m16/32,%eax; cmp r/m16/32,%eax; jcc rel16/32;
-    putIcX86("8b_%2m0; 3b_%3m0; 0f_%0c_%1l;",
+    putIcX86("%2L22; 3b_&<<3:%3m0; 0f_%0c_%1l;",
         (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
         &vars[label],
         &vars[tc[conditionBegin]],
         &vars[tc[conditionBegin + 2]]);
+    /*
+      ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+      8b_%2m0    -> mov r/m16/32,%eax
+      3b_%3m0    -> cmp r/m16/32,%eax
+      0f_%0c_%1l -> jcc rel16/32
+    */
   }
   else {
     num = expression(num);
-    // mov %eax,r/m16/32; test %eax,%eax; jcc rel16/32;
-    putIcX86("8b_%2m0; 85_c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
+    putIcX86("%2L22; 85_&9:c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
+    /*
+      ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+      8b_%2m0    -> mov r/m16/32,%eax
+      85_c0      -> test %eax,%eax
+      0f_%0c_%1l -> jcc rel16/32
+    */
     tmpFree(num);
   }
 }
