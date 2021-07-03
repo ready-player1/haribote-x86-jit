@@ -1186,8 +1186,16 @@ int compile(String sourceCode)
         ( (tc[wpc1] == tc[wpc2] && tc[wpc2 + 1] == PlusPlus) || (tc[wpc1] == tc[wpc2 + 1] && tc[wpc2] == PlusPlus) );
 
       if (isWpc1Les && isWpc2PlusPlus) {
-        // mov r/m16/32,%eax; inc %eax; mov %eax,r/m16/32; cmp r/m16/32,%eax; jl rel16/32;
-        putIcX86("8b_%1m0; 40; 89_%1m0; 3b_%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+        putIcX86("%1L11; &<<0:40; %1S; 3b_&<<3:%2m0; 0f_8c_%0l;", &vars[curBlock[ForBegin]], &vars[tc[wpc1]], &vars[tc[wpc1 + 2]], 0);
+        /*
+          ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
+
+          8b_%1m0   -> mov r/m16/32,%eax
+          40        -> inc %eax
+          89_%1m0   -> mov %eax,r/m16/32
+          3b_%2m0   -> cmp r/m16/32,%eax
+          0f_8c_%0l -> jl rel16/32
+        */
       }
       else {
         wpc   [1] = curBlock[ ForWpc1    ];
