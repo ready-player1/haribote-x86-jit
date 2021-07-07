@@ -451,14 +451,84 @@ void putModRM(unsigned reg, unsigned addVal, IntPtr var)
   }
 }
 
+unsigned char *instructionBegin;    // 現在の命令の開始位置（直前のセミコロンの次の位置）
+unsigned char *preInstructionBegin; // 1つ前の命令の開始位置（さらにその前のセミコロンの次の位置）
+unsigned char *setccBegin;          // SETcc命令を見つけたら、その先頭の位置を記録する
+
+// セミコロンが来たタイミングで呼ばれ、最適化を行う
+void optimizeX86()
+{
+  if (instructionBegin != ip) {
+    if (instructionBegin[0] == 0x0f && 0x90 <= instructionBegin[1] && instructionBegin[1] <= 0x9f) // SETcc
+      setccBegin = instructionBegin;
+    if (instructionBegin[0] == 0x8b && preInstructionBegin != NULL && preInstructionBegin[0] == 0x89 &&
+        instructionBegin[1] == 0x05 && preInstructionBegin[1] == 0x05 &&
+        get32(instructionBegin + 2) == get32(preInstructionBegin + 2)) {
+      /*
+        直前に書いたところをすぐに読み込む場合は、その読み込み命令(8b命令）を削除する。
+        書き込み対象が一時変数の場合は、書き込み命令（89命令）も削除する。
+
+        89 05 94 0a 42 00; // _t1 = eax; 無駄な書き込み
+        8b 05 94 0a 42 00; // eax = _t1; 無駄な読み込み
+      */
+      ip = instructionBegin; // 8b命令を削除
+
+      int tokenCode = (IntPtr) get32(preInstructionBegin + 2) - vars;
+      if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
+        ip = preInstructionBegin; // 89命令を削除
+    }
+    preInstructionBegin = instructionBegin;
+    instructionBegin = ip;
+  }
+  if (setccBegin + 14 == ip && memcmp(&setccBegin[2], "\xc0\x0f\xb6\xc0\x85\xc0\x0f", 7) == 0 &&
+      0x84 <= setccBegin[9] && setccBegin[9] <= 0x85) {
+    /*
+      SETcc命令の後に最適化すべきパターンが来ていたら、命令列を加工する。
+
+      3b 05 94 0a 42 00; // if (eax < _t1) { eax = 1; } (setl)
+      0f 9c c0;          // 0f が*setccBegin、c0 が*(setccBegin + 2)
+      0f b6 c0;
+      85 c0;             // if (eax == 0) goto skip;
+      0f 84 0c 00 00 00; // 0c が*(setccBegin + 10)、00 の次がsetccBegin + 14
+    */
+    memcpy(&setccBegin[2], &setccBegin[10], 4); // 2行目の「0f 9c c0;」->「0f 9c 0c 00 00 00;」
+    setccBegin[1] -= 0x10; // SETcc「0f 9c 0c 00 00 00;」-> jcc「0f 8c 0c 00 00 00;」
+    /*
+      ここまでの加工で、命令列は次のようになる。
+
+      3b 05 94 0a 42 00; // if (eax < _t1) { eax = 1; } (setl)
+      0f 8c 0c 00 00 00; // 0f が*setccBegin
+      85 c0;
+      0f 84 0c 00 00 00; // 84 が*(setccBegin + 9)
+    */
+    if (setccBegin[9] == 0x84)
+      setccBegin[1] ^= 0x01; // 条件反転
+    /*
+      ここまでの加工で、命令列は次のようになる。
+
+      3b 05 94 0a 42 00; // if (eax < _t1) { eax = 1; } (setl)
+      0f 8d 0c 00 00 00; // 0f が*setccBegin、*(setccBegin + 1)の8cと0x01のxorを取って8c -> 8d
+      85 c0;
+      0f 84 0c 00 00 00; // 84 が*(setccBegin + 9)
+    */
+    instructionBegin = ip = setccBegin + 6; // 3行目の85の位置
+    preInstructionBegin = setccBegin = NULL;
+    jmps[jp - 1] = ip - 4 - instructions;
+  }
+}
+
 void decodeX86(String str, IntPtr *operands)
 {
   unsigned reg = 0; // ModR/Mバイトのregフィールドの値
   unsigned addVal = 0, regCode; // 命令に加算する値, addValの値を求める際に用いるレジスタ番号
 
   for (int pos = 0; str[pos] != 0;) {
-    if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':' || str[pos] == ';')
+    if (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '_' || str[pos] == ':')
       ++pos;
+    else if (str[pos] == ';') {
+      ++pos;
+      optimizeX86();
+    }
     else if (getHex(str[pos]) >= 0 && getHex(str[pos + 1]) >= 0) { // 16進数2桁（opcode）
       *ip = ( ((unsigned) getHex(str[pos]) << 4) | getHex(str[pos + 1]) ) + addVal;
       ++ip;
@@ -1031,6 +1101,7 @@ int tmpLabelAlloc()
 void defLabel(int tokenCode)
 {
   vars[tokenCode] = ip - instructions;
+  preInstructionBegin = setccBegin = NULL;
 }
 
 #define BLOCK_INFO_UNIT_SIZE 10
@@ -1079,7 +1150,8 @@ int compile(String sourceCode)
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
-  ip = instructions;
+  instructionBegin = ip = instructions;
+  preInstructionBegin = setccBegin = NULL;
   jp = 0;
   putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
   regVarSaveLoad(RvLoad); // 前回実行時のレジスタ変数の値を引き継ぐ
