@@ -455,6 +455,30 @@ unsigned char *instructionBegin;    // 現在の命令の開始位置（直前�
 unsigned char *preInstructionBegin; // 1つ前の命令の開始位置（さらにその前のセミコロンの次の位置）
 unsigned char *setccBegin;          // SETcc命令を見つけたら、その先頭の位置を記録する
 
+// トークンコードを受け取り、定数か変数かを判定する
+int isConst(int tokenCode)
+{
+  if ('0' <= tokenStrs[tokenCode][0] && tokenStrs[tokenCode][0] <= '9')
+    return 1;
+
+  return 0;
+}
+
+// %mの部分のポインタを受け取り、定数を指しているのかを判定する
+int isConstM(unsigned char *p)
+{
+  if ((*p & 0xc7) != 0x05)
+    return 0;
+
+  return isConst(((AInt *) get32(p + 1)) - vars);
+}
+
+// 定数だった場合に%mの部分のポインタを受け取り、その定数値を返す
+int getConstM(unsigned char *p)
+{
+  return *((AInt *) get32(p + 1));
+}
+
 // セミコロンが来たタイミングで呼ばれ、最適化を行う
 void optimizeX86()
 {
