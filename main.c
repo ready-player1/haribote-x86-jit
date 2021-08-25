@@ -1184,9 +1184,33 @@ int tmpLabelAlloc()
   return getTokenCode(str, strlen(str));
 }
 
+int align;
+
 // ラベルに対応するipの位置を記録する
 void defLabel(int tokenCode)
 {
+  // 命令が短くなりすぎて速度が出せないアドレスになりそうなときはNOP命令を入れる
+  if (align > 0) {
+    int len = (ip - instructions) & 15; // 0〜15
+    if (0 < len && len <= 7) {
+      putIcX86("66_0f_1f_84_00_00_00_00_00", 0, 0, 0, 0); // 9バイトのNOP
+      len = (len + 9) & 15; // 8〜15
+    }
+    if (len > 0) {
+      static char *nopTable[8] = {
+        "0f_1f_84_00_00_00_00_00", // 8バイトのNOP
+        "0f_1f_80_00_00_00_00",    // 7バイトのNOP
+        "66_0f_1f_44_00_00",       // 6バイトのNOP
+        "0f_1f_44_00_00",          // 5バイトのNOP
+        "0f_1f_40_00",             // 4バイトのNOP
+        "0f_1f_00",                // 3バイトのNOP
+        "66_90",                   // 2バイトのNOP
+        "90"                       // 1バイトのNOP
+      };
+      putIcX86(nopTable[len - 8], 0, 0, 0, 0);
+    }
+  }
+
   vars[tokenCode] = ip - instructions;
   preInstructionBegin = setccBegin = NULL;
 }
@@ -1523,6 +1547,12 @@ int compile(String sourceCode)
         0f_ac_d0_%2c -> shrd %cl,%edx,%eax # edx:eaxの64bitをecxだけ右シフトする。でもeaxしか更新されない（edxはそのまま）
         89_%3m0      -> mov %eax,r/m16/32
       */
+    }
+    else if (match(39, "align();", pc)) {
+      align = 1;
+    }
+    else if (match(40, "align(!!*0);", pc)) {
+      align = vars[tc[wpc[0]]];
     }
     else if (match(8, "!!***0;", pc)) {
       e0 = expression(0);
