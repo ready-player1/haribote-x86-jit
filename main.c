@@ -499,6 +499,35 @@ int calcConstForPrefixOp(int operator, int tokenCodeA)
   return getTokenCode(str, strlen(str));
 }
 
+// 受け取ったトークンコードが定数であれば計算結果のトークンを返す。そうでなければ0を返す
+int calcConstForInfixOp(int operator, int tokenCodeA, int tokenCodeB)
+{
+  if (isConst(tokenCodeA) == 0 || isConst(tokenCodeB) == 0)
+    return 0;
+
+  int var = 0, varA = vars[tokenCodeA], varB = vars[tokenCodeB];
+  switch (operator) {
+  case Equal:      var = varA == varB; break;
+  case NotEq:      var = varA != varB; break;
+  case Les:        var = varA <  varB; break;
+  case GtrEq:      var = varA >= varB; break;
+  case LesEq:      var = varA <= varB; break;
+  case Gtr:        var = varA >  varB; break;
+  case Plus:       var = varA +  varB; break;
+  case Minus:      var = varA -  varB; break;
+  case Multi:      var = varA *  varB; break;
+  case Divi:       var = varA /  varB; break;
+  case Mod:        var = varA %  varB; break;
+  case BitwiseAnd: var = varA &  varB; break;
+  case ShiftRight: var = varA >> varB; break;
+  case And:        var = varA && varB; break;
+  }
+
+  char str[100];
+  sprintf(str, "%d", var);
+  return getTokenCode(str, strlen(str));
+}
+
 void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3);
 
 // セミコロンが来たタイミングで呼ばれ、最適化を行う
@@ -964,8 +993,11 @@ int evalInfixExpression(int i, int precedenceLevel, int op)
   int j, k;
   ++epc;
   j = evalExpression(precedenceLevel);
-  k = tmpAlloc();
-  putIcX86(getOpBin(op), &vars[k], &vars[i], &vars[j], 0);
+  k = calcConstForInfixOp(op, i, j);
+  if (k == 0) {
+    k = tmpAlloc();
+    putIcX86(getOpBin(op), &vars[k], &vars[i], &vars[j], 0);
+  }
   tmpFree(i);
   tmpFree(j);
   if (i < 0 || j < 0)
@@ -1323,7 +1355,15 @@ int compile(String sourceCode)
       putIcX86("%0L00; &<<0:40; %0S;", &vars[tc[wpc[0]]], 0, 0, 0);
     }
     else if (match(2, "!!*0 = !!*1 !!*2 !!*3;", pc) && Equal <= tc[wpc[2]] && tc[wpc[2]] < Assigne) { // 加算、減算など
-      putIcX86(getOpBin(tc[wpc[2]]), &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
+      int i = calcConstForInfixOp(tc[wpc[2]], tc[wpc[1]], tc[wpc[3]]);
+      if (i == 0)
+        putIcX86(getOpBin(tc[wpc[2]]), &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], &vars[tc[wpc[3]]], 0);
+      else {
+        if (isRegVar(getRegVarNum(&vars[tc[wpc[0]]])))
+          putIcX86("%0L00; 8b_&<<3:%1m0;", &vars[tc[wpc[0]]], &vars[i], 0, 0);
+        else
+          putIcX86("%1L11; 89_&<<3:%0m0;", &vars[tc[wpc[0]]], &vars[i], 0, 0);
+      }
     }
     else if (match(4, "print !!**0;", pc)) {
       exprPutIcX86(0, 1, printInteger, &e0);
