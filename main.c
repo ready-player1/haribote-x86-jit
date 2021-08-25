@@ -483,6 +483,22 @@ int getConstM(unsigned char *p)
   return *((AInt *) get32(p + 1));
 }
 
+// 受け取ったトークンコードが定数であれば計算結果のトークンを返す。そうでなければ0を返す
+int calcConstForPrefixOp(int operator, int tokenCodeA)
+{
+  if (isConst(tokenCodeA) == 0)
+    return 0;
+
+  int var = 0, varA = vars[tokenCodeA];
+  switch (operator) {
+  case Minus: var = -varA; break;
+  }
+
+  char str[100];
+  sprintf(str, "%d", var);
+  return getTokenCode(str, strlen(str));
+}
+
 void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3);
 
 // セミコロンが来たタイミングで呼ばれ、最適化を行う
@@ -975,8 +991,11 @@ int evalExpression(int precedenceLevel)
   else if (tokenCodes[epc] == Minus) { // 単項マイナス
     ++epc;
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
-    er = tmpAlloc();
-    putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
+    er = calcConstForPrefixOp(Minus, e0);
+    if (er == 0) {
+      er = tmpAlloc();
+      putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
+    }
   }
   else if (match(71, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
     e0 = expression(0);
