@@ -479,12 +479,75 @@ int getConstM(unsigned char *p)
   return *((AInt *) get32(p + 1));
 }
 
+void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3);
+
 // セミコロンが来たタイミングで呼ばれ、最適化を行う
 void optimizeX86()
 {
   if (instructionBegin != ip) {
-    if (instructionBegin[0] == 0x0f && 0x90 <= instructionBegin[1] && instructionBegin[1] <= 0x9f) // SETcc
+    if (instructionBegin[0] == 0x0f && 0x90 <= instructionBegin[1] && instructionBegin[1] <= 0x9f) { // SETcc
       setccBegin = instructionBegin;
+    }
+    if (instructionBegin[0] == 0x8b && isConstM(&instructionBegin[1])) { // mov r/m16/32,r16/32
+      ip = instructionBegin;
+
+      unsigned reg, rm;
+      reg = rm = (instructionBegin[1] >> 3) & 7;
+
+      int i = getConstM(&instructionBegin[1]);
+      if (i == 0)
+        putIcX86("31_%0c", (IntPtr) (0xc0 | (reg << 3) | rm), 0, 0, 0); // 同じレジスタ同士のxorを計算して、レジスタの値を0にする
+      else
+        putIcX86("%0c_%1i", (IntPtr) (0xb8 + reg), (IntPtr) i, 0, 0); // mov imm16/32,r16/32
+    }
+    if (instructionBegin[0] <= 0x3f && (instructionBegin[0] & 7) == 3 && isConstM(&instructionBegin[1])) {
+      /*
+        03命令 add r/m16/32,r16/32
+        0b命令 or r/m16/32,r16/32
+        13命令 add r/m16/32,r16/32
+        1b命令 sbb r/m16/32,r16/32
+        23命令 and r/m16/32,r16/32
+        2b命令 sub r/m16/32,r16/32
+        33命令 xor r/m16/32,r16/32
+        3b命令 cmp r/m16/32,r16/32
+      */
+      ip = instructionBegin;
+
+      unsigned reg = instructionBegin[0] & 0x38;
+      unsigned rm  = (instructionBegin[1] >> 3) & 7;
+
+      int i = getConstM(&instructionBegin[1]);
+      if (-0x80 <= i && i <= 0x7f)
+        putIcX86("83_%0c_%1c", (IntPtr) (0xc0 | reg | rm), (IntPtr) i, 0, 0); // 83 c0 ?? # opcode imm8,r/m16/32
+      else
+        putIcX86("81_%0c_%1i", (IntPtr) (0xc0 | reg | rm), (IntPtr) i, 0, 0); // 83 c0 ?? ?? ?? ?? # opcode imm16/32,r/m16/32
+    }
+    if (instructionBegin[0] == 0x0f && instructionBegin[1] & 0xaf && isConstM(&instructionBegin[2])) { // imul r/m16/32,r16/32
+      ip = instructionBegin;
+
+      unsigned reg, rm;
+      reg = rm = (instructionBegin[2] >> 3) & 7;
+
+      int i = getConstM(&instructionBegin[2]);
+      if (-0x80 <= i && i <= 0x7f)
+        putIcX86("6b_%0c_%1c", (IntPtr) (0xc0 | (reg << 3) | rm), (IntPtr) i, 0, 0); // imul imm8,rm/16/32,r16/32
+      else
+        putIcX86("69_%0c_%1i", (IntPtr) (0xc0 | (reg << 3) | rm), (IntPtr) i, 0, 0); // imul imm16/32,r/m16/32,r16/32
+    }
+    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xc0 && instructionBegin[2] == 1) { // add 1
+      ip = instructionBegin;
+      putIcX86("%0c", (IntPtr) (0x40 + (instructionBegin[1] & 7)), 0, 0, 0); // inc r16/32
+    }
+    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xe8 && instructionBegin[2] == 1) { // sub 1
+      ip = instructionBegin;
+      putIcX86("%0c", (IntPtr) (0x48 + (instructionBegin[1] & 7)), 0, 0, 0); // dec r16/32
+    }
+    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xf8 && instructionBegin[2] == 0) { // cmp 0
+      ip = instructionBegin;
+      unsigned reg, rm;
+      reg = rm = (instructionBegin[1] & 7);
+      putIcX86("85_%0c", (IntPtr) (0xc0 | (reg << 3) | rm), 0, 0, 0); // test op1 op2 # op1とop2に同じレジスタを指定する。結果が0のときZFが1
+    }
     if (instructionBegin[0] == 0x8b && preInstructionBegin != NULL && preInstructionBegin[0] == 0x89 &&
         instructionBegin[1] == 0x05 && preInstructionBegin[1] == 0x05 &&
         get32(instructionBegin + 2) == get32(preInstructionBegin + 2)) {
