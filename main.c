@@ -460,6 +460,10 @@ int isConst(int tokenCode)
 {
   if ('0' <= tokenStrs[tokenCode][0] && tokenStrs[tokenCode][0] <= '9')
     return 1;
+  if (tokenStrs[tokenCode][0] == '-' && '0' <= tokenStrs[tokenCode][1] && tokenStrs[tokenCode][1] <= '9')
+    return 1;
+  if (tokenStrs[tokenCode][0] == '"')
+    return 1;
 
   return 0;
 }
