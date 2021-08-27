@@ -437,6 +437,8 @@ int regVarNum2regCode[N_REGVAR] = { // レジスタ変数番号から、レジ�
   7  // edi
 };
 
+int varCounters[ MAX_TOKEN_CODE + 1 ];
+
 void putModRM(unsigned reg, unsigned addVal, IntPtr var)
 {
   int regVarNum = getRegVarNum(var);
@@ -447,6 +449,7 @@ void putModRM(unsigned reg, unsigned addVal, IntPtr var)
   else {
     *ip = ( 0x05 | (reg << 3) ) + addVal; // mod=00, reg=???, r/m=101
     put32(ip + 1, (unsigned) var);
+    ++varCounters[var - vars];
     ip += 5;
   }
 }
@@ -539,6 +542,7 @@ void optimizeX86()
     }
     if (instructionBegin[0] == 0x8b && isConstM(&instructionBegin[1])) { // mov r/m16/32,r16/32
       ip = instructionBegin;
+      --varCounters[ (AInt *) get32(&instructionBegin[2]) - vars ];
 
       unsigned reg, rm;
       reg = rm = (instructionBegin[1] >> 3) & 7;
@@ -561,6 +565,7 @@ void optimizeX86()
         3b命令 cmp r/m16/32,r16/32
       */
       ip = instructionBegin;
+      --varCounters[ (AInt *) get32(&instructionBegin[2]) - vars ];
 
       unsigned reg = instructionBegin[0] & 0x38;
       unsigned rm  = (instructionBegin[1] >> 3) & 7;
@@ -573,6 +578,7 @@ void optimizeX86()
     }
     if (instructionBegin[0] == 0x0f && instructionBegin[1] & 0xaf && isConstM(&instructionBegin[2])) { // imul r/m16/32,r16/32
       ip = instructionBegin;
+      --varCounters[ (AInt *) get32(&instructionBegin[3]) - vars ];
 
       unsigned reg, rm;
       reg = rm = (instructionBegin[2] >> 3) & 7;
@@ -608,10 +614,13 @@ void optimizeX86()
         8b 05 94 0a 42 00; // eax = _t1; 無駄な読み込み
       */
       ip = instructionBegin; // 8b命令を削除
-
       int tokenCode = (IntPtr) get32(preInstructionBegin + 2) - vars;
-      if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
+      --varCounters[tokenCode];
+
+      if (Tmp0 <= tokenCode && tokenCode <= Tmp9) {
         ip = preInstructionBegin; // 89命令を削除
+        --varCounters[tokenCode];
+      }
     }
     preInstructionBegin = instructionBegin;
     instructionBegin = ip;
@@ -1326,6 +1335,8 @@ int compile(String sourceCode)
   for (int i = 0; i < N_TMPS; ++i)
     tmpFlags[i] = 0;
   tmpLabelNo = 0;
+  for (int i = 0; i < MAX_TOKEN_CODE + 1; ++i)
+    varCounters[i] = 0;
   toExit = tmpLabelAlloc();
   blockDepth = loopDepth = 0;
 
@@ -1671,12 +1682,19 @@ int run(String sourceCode)
       aFlushAll(win);
   }
   else {
+    // 機械語の命令列を表示する
     int nBytes = dumpEnd - dumpBegin;
     for (int i = 0; i < nBytes; ++i)
       printf("%02x ", *(dumpBegin + i));
     if (nBytes)
       printf("\n");
     printf("(len=%d)\n", nBytes);
+
+    // 変数の出現頻度を表示する
+    for (int i = 0; i < MAX_TOKEN_CODE + 1; ++i) {
+      if (varCounters[i] != 0)
+        printf("#%04d(%08x): %06d: %s\n", i, (int) &vars[i], varCounters[i], tokenStrs[i]);
+    }
   }
   return 0;
 }
