@@ -1159,6 +1159,7 @@ int compile(String sourceCode)
   }
   dumpEnd = ip;
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
+
   unsigned char *end = ip, *src, *dest;
   for (int i = 0; i < jp; ++i) { // ジャンプ命令の最適化
     src  = jmps[i] + instructions;
