@@ -653,18 +653,17 @@ int getPrecedenceLevel(int notationStyle, int operator)
   return precedence->level;
 }
 
-int evalInfixExpression(int i, int precedenceLevel, int op)
+int evalInfixExpression(int lhs, int precedenceLevel, int op)
 {
-  int j, k;
   ++epc;
-  j = evalExpression(precedenceLevel);
-  k = tmpAlloc();
-  putIcX86(getOpBin(op), &vars[k], &vars[i], &vars[j], 0);
-  tmpFree(i);
-  tmpFree(j);
-  if (i < 0 || j < 0)
+  int rhs = evalExpression(precedenceLevel);
+  int res = tmpAlloc();
+  putIcX86(getOpBin(op), &vars[res], &vars[lhs], &vars[rhs], 0);
+  tmpFree(lhs);
+  tmpFree(rhs);
+  if (lhs < 0 || rhs < 0)
     return -1;
-  return k;
+  return res;
 }
 
 int evalExpression(int precedenceLevel)
