@@ -1038,7 +1038,7 @@ int evalExpression(int precedenceLevel)
       putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
     }
   }
-  else if (match(71, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
+  else if (match(72, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
     e0 = expression(0);
     e1 = expression(1);
     int e2 = expression(2);
@@ -1055,27 +1055,27 @@ int evalExpression(int precedenceLevel)
     if (e2 < 0)
       e0 = -1;
   }
-  else if (match(72, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
+  else if (match(73, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
     er = exprPutIcX86(er, 3, call_aRgb8, &e0);
   }
-  else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
+  else if (match(74, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
     exprPutIcX86(0, 3, call_aOpenWin, &e0);
     putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     er = Zero;
   }
-  else if (match(74, "aXorShift32()", epc)) {
+  else if (match(75, "aXorShift32()", epc)) {
     er = exprPutIcX86(er, 0, call_aXorShift32, &e0);
   }
-  else if (match(75, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
+  else if (match(76, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
     er = exprPutIcX86(er, 2, call_aGetPix, &e0);
   }
-  else if (match(76, "ff16sin(!!**0)", epc)) {
+  else if (match(77, "ff16sin(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16sin, &e0);
   }
-  else if (match(77, "ff16cos(!!**0)", epc)) {
+  else if (match(78, "ff16cos(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16cos, &e0);
   }
-  else if (match(78, "aInkey(!!***8, !!**0)", epc)) {
+  else if (match(79, "aInkey(!!***8, !!**0)", epc)) {
     er = exprPutIcX86(er, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
@@ -1103,33 +1103,33 @@ int evalExpression(int precedenceLevel)
       er = tmpAlloc();
       putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
-    else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
+    else if (match(71, "[!!**0]=", epc)) {
       e1 = er;
       e0 = expression(0);
       epc = nextPc;
-      if (tokenCodes[epc] == Assign && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assign)))) {
-        ++epc;
-        er = evalExpression(encountered);
-        //                                               base       index
-        putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[er], 0);
-        /*
-          8b_%2m0  -> mov r/m16/32,%eax
-          8b_%0m2  -> mov r/m16/32,%edx
-          8b_%1m1  -> mov r/m16/32,%ecx
-          89_04_8a -> mov %eax,(%edx,%ecx,4)
-        */
-      }
-      else {
-        er = tmpAlloc();
-        //                                               base       index
-        putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[er], 0);
-        /*
-          8b_%0m2  -> mov r/m16/32,%edx
-          8b_%1m1  -> mov r/m16/32,%ecx
-          8b_04_8a -> mov (%edx,%ecx,4),%eax
-          89_%2m0  -> mov %eax,r/m16/32
-        */
-      }
+      er = evalExpression(getPrecedenceLevel(Infix, Assign));
+      //                                               base       index
+      putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[er], 0);
+      /*
+        8b_%2m0  -> mov r/m16/32,%eax
+        8b_%0m2  -> mov r/m16/32,%edx
+        8b_%1m1  -> mov r/m16/32,%ecx
+        89_04_8a -> mov %eax,(%edx,%ecx,4)
+      */
+    }
+    else if (match(70, "[!!**0]", epc)) {
+      e1 = er;
+      er = tmpAlloc();
+      e0 = expression(0);
+      //                                               base       index
+      putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[er], 0);
+      /*
+        8b_%0m2  -> mov r/m16/32,%edx
+        8b_%1m1  -> mov r/m16/32,%ecx
+        8b_04_8a -> mov (%edx,%ecx,4),%eax
+        89_%2m0  -> mov %eax,r/m16/32
+      */
+      epc = nextPc;
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
