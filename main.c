@@ -764,7 +764,7 @@ int evalExpression(int precedenceLevel)
     er = tmpAlloc();
     putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
-  else if (match(71, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
+  else if (match(72, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
     e0 = expression(0);
     e1 = expression(1);
     int e2 = expression(2);
@@ -781,27 +781,27 @@ int evalExpression(int precedenceLevel)
     if (e2 < 0)
       e0 = -1;
   }
-  else if (match(72, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
+  else if (match(73, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
     er = exprPutIcX86(er, 3, call_aRgb8, &e0);
   }
-  else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
+  else if (match(74, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
     exprPutIcX86(0, 3, call_aOpenWin, &e0);
     putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
     er = Zero;
   }
-  else if (match(74, "aXorShift32()", epc)) {
+  else if (match(75, "aXorShift32()", epc)) {
     er = exprPutIcX86(er, 0, call_aXorShift32, &e0);
   }
-  else if (match(75, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
+  else if (match(76, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
     er = exprPutIcX86(er, 2, call_aGetPix, &e0);
   }
-  else if (match(76, "ff16sin(!!**0)", epc)) {
+  else if (match(77, "ff16sin(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16sin, &e0);
   }
-  else if (match(77, "ff16cos(!!**0)", epc)) {
+  else if (match(78, "ff16cos(!!**0)", epc)) {
     er = exprPutIcX86(er, 1, ff16cos, &e0);
   }
-  else if (match(78, "aInkey(!!***8, !!**0)", epc)) {
+  else if (match(79, "aInkey(!!***8, !!**0)", epc)) {
     er = exprPutIcX86(er, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
@@ -829,21 +829,19 @@ int evalExpression(int precedenceLevel)
       er = tmpAlloc();
       putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
-    else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
-      int op;
+    else if (match(71, "[!!**0]=", epc)) {
       e1 = er;
       e0 = expression(0);
       epc = nextPc;
-      if (tokenCodes[epc] == Assign && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assign)))) {
-        op = OpArySet;
-        ++epc;
-        er = evalExpression(encountered);
-      }
-      else {
-        op = OpAryGet;
-        er = tmpAlloc();
-      }
-      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
+      er = evalExpression(getPrecedenceLevel(Infix, Assign));
+      putIc(OpArySet, &vars[e1], &vars[e0], &vars[er], 0);
+    }
+    else if (match(70, "[!!**0]", epc)) {
+      e1 = er;
+      er = tmpAlloc();
+      e0 = expression(0);
+      putIc(OpAryGet, &vars[e1], &vars[e0], &vars[er], 0);
+      epc = nextPc;
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
