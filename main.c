@@ -692,29 +692,29 @@ int evalExpression(int precedenceLevel)
     er = tmpAlloc();
     putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
   }
-  else if (match(71, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
+  else if (match(72, "mul64shr(!!**1, !!**2, !!**3)", epc)) {
     er = exprPutIc(er, 4, OpM64s, &e0);
   }
-  else if (match(72, "aRgb8(!!**1, !!**2, !!**3)", epc)) {
+  else if (match(73, "aRgb8(!!**1, !!**2, !!**3)", epc)) {
     er = exprPutIc(er, 4, OpRgb8, &e0);
   }
-  else if (match(73, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
+  else if (match(74, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
     exprPutIc(0, 3, OpOpnWin, &e0);
     er = Zero;
   }
-  else if (match(74, "aXorShift32()", epc)) {
+  else if (match(75, "aXorShift32()", epc)) {
     er = exprPutIc(er, 1, OpXorShift, &e0);
   }
-  else if (match(75, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
+  else if (match(76, "aGetPix(!!**8, !!**1, !!**2)", epc)) {
     er = exprPutIc(er, 3, OpGetPix, &e0);
   }
-  else if (match(76, "ff16sin(!!**1)", epc)) {
+  else if (match(77, "ff16sin(!!**1)", epc)) {
     er = exprPutIc(er, 2, OpF16Sin, &e0);
   }
-  else if (match(77, "ff16cos(!!**1)", epc)) {
+  else if (match(78, "ff16cos(!!**1)", epc)) {
     er = exprPutIc(er, 2, OpF16Cos, &e0);
   }
-  else if (match(78, "aInkey(!!***8 , !!**1)", epc)) {
+  else if (match(79, "aInkey(!!***8 , !!**1)", epc)) {
     er = exprPutIc(er, 2, OpInkey, &e0);
   }
   else { // 変数もしくは定数
@@ -742,21 +742,19 @@ int evalExpression(int precedenceLevel)
       er = tmpAlloc();
       putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
     }
-    else if (match(70, "[!!**0]", epc)) { // 配列の添字演算子式
-      int op;
+    else if (match(71, "[!!**0]=", epc)) {
       e1 = er;
       e0 = expression(0);
       epc = nextPc;
-      if (tokenCodes[epc] == Assign && (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, Assign)))) {
-        op = OpArySet;
-        ++epc;
-        er = evalExpression(encountered);
-      }
-      else {
-        op = OpAryGet;
-        er = tmpAlloc();
-      }
-      putIc(op, &vars[e1], &vars[e0], &vars[er], 0);
+      er = evalExpression(getPrecedenceLevel(Infix, Assign));
+      putIc(OpArySet, &vars[e1], &vars[e0], &vars[er], 0);
+    }
+    else if (match(70, "[!!**0]", epc)) {
+      e1 = er;
+      er = tmpAlloc();
+      e0 = expression(0);
+      putIc(OpAryGet, &vars[e1], &vars[e0], &vars[er], 0);
+      epc = nextPc;
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
