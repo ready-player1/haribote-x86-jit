@@ -949,46 +949,45 @@ int evalExpression(int precedenceLevel); // evalInfixExpression()が参照する
 int expression(int num);
 int exprPutIcX86(int er, int len, void *fn, int *err);
 
-enum notationStyle { Prefix = 0, Infix };
+#define N_PREFIX 2
+#define N_INFIX 15
+
+enum notationStyle { Prefix = 0, Infix = N_PREFIX + 1 };
 
 typedef struct precedence {
   int operator;
   int level;
 } Precedence;
 
-#define N_OPERATORS 15
-
-Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
-  { // Prefix
-    {PlusPlus, 2},
-    {Minus, 2},
-    {.level = LOWEST_PRECEDENCE + 1}
-  },
-  { // Infix
-    {Multi, 4},
-    {Divi, 4},
-    {Mod, 4},
-    {Plus, 5},
-    {Minus, 5},
-    {ShiftRight, 6},
-    {LesEq, 7},
-    {GtrEq, 7},
-    {Les, 7},
-    {Gtr, 7},
-    {Equal, 8},
-    {NotEq, 8},
-    {And, 9},
-    {AndAnd, 12},
-    {Assign, 15},
-    {.level = LOWEST_PRECEDENCE + 1}
-  }
+Precedence precedenceTable[ N_PREFIX + N_INFIX + 2 ] = {
+  // Prefix
+  {PlusPlus, 2},
+  {Minus, 2},
+  {.level = LOWEST_PRECEDENCE + 1},
+  // Infix
+  {Multi, 4},
+  {Divi, 4},
+  {Mod, 4},
+  {Plus, 5},
+  {Minus, 5},
+  {ShiftRight, 6},
+  {LesEq, 7},
+  {GtrEq, 7},
+  {Les, 7},
+  {Gtr, 7},
+  {Equal, 8},
+  {NotEq, 8},
+  {And, 9},
+  {AndAnd, 12},
+  {Assign, 15},
+  {.level = LOWEST_PRECEDENCE + 1}
 };
 
 int getPrecedenceLevel(int notationStyle, int operator)
 {
   int i = 0;
   Precedence *precedence;
-  while ((precedence = &precedenceTable[notationStyle][i])->level != LOWEST_PRECEDENCE + 1) {
+  while ((precedence = &precedenceTable[notationStyle + i])->level != LOWEST_PRECEDENCE + 1) {
     if (operator == precedence->operator)
       break;
     ++i;
