@@ -156,9 +156,9 @@ enum keyId {
   Multi,
   Divi,
   Mod,
-  BitwiseAnd,
-  ShiftRight,
   And,
+  ShiftRight,
+  AndAnd,
 
   Assign,
 
@@ -420,8 +420,8 @@ void initCorrespondingTerms() {
   correspondingTerms[GtrEq]      = OpCge;
   correspondingTerms[Equal]      = OpCeq;
   correspondingTerms[NotEq]      = OpCne;
-  correspondingTerms[BitwiseAnd] = OpBand;
-  correspondingTerms[And]        = OpAnd;
+  correspondingTerms[And]        = OpBand;
+  correspondingTerms[AndAnd]     = OpAnd;
   correspondingTerms[Assign]     = OpCpy;
 };
 
@@ -616,8 +616,8 @@ Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
     {Gtr, 7},
     {Equal, 8},
     {NotEq, 8},
-    {BitwiseAnd, 9},
-    {And, 12},
+    {And, 9},
+    {AndAnd, 12},
     {Assign, 15},
     {.level = LOWEST_PRECEDENCE + 1}
   }
@@ -749,8 +749,8 @@ int evalExpression(int precedenceLevel)
       case ShiftRight:
       case Les: case LesEq: case Gtr: case GtrEq:
       case Equal: case NotEq:
-      case BitwiseAnd:
       case And:
+      case AndAnd:
         er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
       // 右結合
