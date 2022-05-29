@@ -1,5 +1,4 @@
 #include <acl.c>
-#include <limits.h>
 
 typedef unsigned char *String;
 
