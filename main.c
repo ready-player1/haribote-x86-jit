@@ -156,9 +156,9 @@ enum keyId {
   Multi,
   Divi,
   Mod,
-  BitwiseAnd,
-  ShiftRight,
   And,
+  ShiftRight,
+  AndAnd,
 
   Assign,
 
@@ -371,9 +371,9 @@ String opBins[] = { // 二項演算子のための機械語
   "%1L02; 0f_af_&<<3:%2m0; %0S;",                             // Multi
   "8b_%1m0; 99; f7_%2m7; 89_%0m0;",                           // Divi
   "8b_%1m0; 99; f7_%2m7; 89_%0m2;",                           // Mod
-  "%1L02; 23_&<<3:%2m0; %0S;",                                // BitwiseAnd
+  "%1L02; 23_&<<3:%2m0; %0S;",                                // And
   "%1L02; 8b_%2m1; d3_&<<0:f8; %0S;",                         // ShiftRight
-  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // And
+  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // AndAnd
 };
 
 inline static String getOpBin(int tokenCode)
@@ -521,9 +521,9 @@ int calcConstForInfixOp(int operator, int tokenCodeA, int tokenCodeB)
   case Multi:      var = varA *  varB; break;
   case Divi:       var = varA /  varB; break;
   case Mod:        var = varA %  varB; break;
-  case BitwiseAnd: var = varA &  varB; break;
+  case And:        var = varA &  varB; break;
   case ShiftRight: var = varA >> varB; break;
-  case And:        var = varA && varB; break;
+  case AndAnd:     var = varA && varB; break;
   }
 
   char str[100];
@@ -978,8 +978,8 @@ Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
     {Gtr, 7},
     {Equal, 8},
     {NotEq, 8},
-    {BitwiseAnd, 9},
-    {And, 12},
+    {And, 9},
+    {AndAnd, 12},
     {Assign, 15},
     {.level = LOWEST_PRECEDENCE + 1}
   }
@@ -1145,8 +1145,8 @@ int evalExpression(int precedenceLevel)
       case ShiftRight:
       case Les: case LesEq: case Gtr: case GtrEq:
       case Equal: case NotEq:
-      case BitwiseAnd:
       case And:
+      case AndAnd:
         er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
       // 右結合
