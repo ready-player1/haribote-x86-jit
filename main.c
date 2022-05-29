@@ -108,7 +108,7 @@ int lexer(String str, int *tokenCodes)
         ++len;
     }
     else {
-      printf("syntax error: %.10s\n", &str[pos]);
+      printf("lexing error: %.10s\n", &str[pos]);
       exit(1);
     }
     if (strncmp(&str[pos], "//", 2) == 0) {
