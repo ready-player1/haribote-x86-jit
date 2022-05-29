@@ -156,9 +156,9 @@ enum keyId {
   Multi,
   Divi,
   Mod,
-  BitwiseAnd,
-  ShiftRight,
   And,
+  ShiftRight,
+  AndAnd,
 
   Assign,
 
@@ -425,8 +425,8 @@ void initCorrespondingTerms() {
   correspondingTerms[GtrEq]      = OpCge;
   correspondingTerms[Equal]      = OpCeq;
   correspondingTerms[NotEq]      = OpCne;
-  correspondingTerms[BitwiseAnd] = OpBand;
-  correspondingTerms[And]        = OpAnd;
+  correspondingTerms[And]        = OpBand;
+  correspondingTerms[AndAnd]     = OpAnd;
   correspondingTerms[Assign]     = OpCpy;
 };
 
@@ -457,9 +457,9 @@ String opBins[] = { // 二項演算子のための機械語
   "8b_%1m0; 0f_af_%2m0; 89_%0m0;",                            // Multi
   "8b_%1m0; 99; f7_%2m7; 89_%0m0;",                           // Divi
   "8b_%1m0; 99; f7_%2m7; 89_%0m2;",                           // Mod
-  "8b_%1m0; 23_%2m0; 89_%0m0;",                               // BitwiseAnd
+  "8b_%1m0; 23_%2m0; 89_%0m0;",                               // And
   "8b_%1m0; 8b_%2m1; d3_f8; 89_%0m0;",                        // ShiftRight
-  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // And
+  "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // AndAnd
 };
 
 inline static String getOpBin(int tokenCode)
@@ -710,8 +710,8 @@ Precedence precedenceTable[2][ N_OPERATORS + 1 ] = {
     {Gtr, 7},
     {Equal, 8},
     {NotEq, 8},
-    {BitwiseAnd, 9},
-    {And, 12},
+    {And, 9},
+    {AndAnd, 12},
     {Assign, 15},
     {.level = LOWEST_PRECEDENCE + 1}
   }
@@ -857,8 +857,8 @@ int evalExpression(int precedenceLevel)
       case ShiftRight:
       case Les: case LesEq: case Gtr: case GtrEq:
       case Equal: case NotEq:
-      case BitwiseAnd:
       case And:
+      case AndAnd:
         er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
       // 右結合
