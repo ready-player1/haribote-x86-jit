@@ -985,14 +985,13 @@ Precedence precedenceTable[ N_PREFIX + N_INFIX + 2 ] = {
 
 int getPrecedenceLevel(int notationStyle, int operator)
 {
+  int n = notationStyle == Prefix ? N_PREFIX : N_INFIX;
+  precedenceTable[notationStyle + n].operator = operator;
+
   int i = 0;
-  Precedence *precedence;
-  while ((precedence = &precedenceTable[notationStyle + i])->level != LOWEST_PRECEDENCE + 1) {
-    if (operator == precedence->operator)
-      break;
+  while (precedenceTable[notationStyle + i].operator != operator)
     ++i;
-  }
-  return precedence->level;
+  return precedenceTable[notationStyle + i].level;
 }
 
 int evalInfixExpression(int lhs, int precedenceLevel, int op)
