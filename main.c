@@ -1195,7 +1195,7 @@ int expression(int num)
   return er;
 }
 
-enum conditionType { WhenConditionIsTrue = 0, WhenConditionIsFalse };
+enum conditionType { ConditionIsTrue = 0, ConditionIsFalse };
 
 //                       je    jne   jl    jge   jle   jg
 int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
@@ -1382,7 +1382,7 @@ int compile(String sourceCode)
       putIcX86("e9_%0l;", &vars[tc[wpc[0]]], 0, 0, 0); // jmp rel16/32
     }
     else if (match(6, "if (!!**0) goto !!*1;", pc)) {
-      ifgoto(0, WhenConditionIsTrue, tc[wpc[1]]);
+      ifgoto(0, ConditionIsTrue, tc[wpc[1]]);
     }
     else if (match(7, "time;", pc)) {
       exprPutIcX86(0, 0, printElapsedTime, &e0);
@@ -1393,7 +1393,7 @@ int compile(String sourceCode)
       curBlock[ BLOCK_TYPE ] = IfBlock;
       curBlock[ IfLabel0   ] = tmpLabelAlloc(); // 条件不成立のときの飛び先
       curBlock[ IfLabel1   ] = 0;
-      ifgoto(0, WhenConditionIsFalse, curBlock[IfLabel0]);
+      ifgoto(0, ConditionIsFalse, curBlock[IfLabel0]);
     }
     else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
@@ -1426,7 +1426,7 @@ int compile(String sourceCode)
 
       e0 = expression(0);
       if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
-        ifgoto(1, WhenConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
+        ifgoto(1, ConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
       defLabel(curBlock[ForBegin]);
     }
     else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
@@ -1458,7 +1458,7 @@ int compile(String sourceCode)
 
         e2 = expression(2);
         if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
-          ifgoto(1, WhenConditionIsTrue, curBlock[ForBegin]);
+          ifgoto(1, ConditionIsTrue, curBlock[ForBegin]);
         else
           putIcX86("e9_%0l;", &vars[curBlock[ForBegin]], 0, 0, 0); // jmp rel16/32
       }
@@ -1476,11 +1476,11 @@ int compile(String sourceCode)
     }
     else if (match(18, "if (!!**0) continue;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      ifgoto(0, WhenConditionIsTrue, loopBlock[ForContinue]);
+      ifgoto(0, ConditionIsTrue, loopBlock[ForContinue]);
     }
     else if (match(19, "if (!!**0) break;", pc) && loopDepth > 0) {
       int *loopBlock = &blockInfo[loopDepth];
-      ifgoto(0, WhenConditionIsTrue, loopBlock[ForBreak]);
+      ifgoto(0, ConditionIsTrue, loopBlock[ForBreak]);
     }
     else if (match(20, "prints !!**0;", pc)) {
       exprPutIcX86(0, 1, printString, &e0);
