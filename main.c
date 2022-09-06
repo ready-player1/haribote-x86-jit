@@ -274,26 +274,26 @@ void initTokenCodes(String *defaultTokens, int len)
     tokenCodes[i] = getTokenCode(defaultTokens[i], strlen(defaultTokens[i]));
 }
 
-#define MAX_PHRASE_LEN 31
+#define PHRASE_LEN 31
 #define WPC_LEN 9
-int tokenCodesForPhrase[ (MAX_PHRASE_LEN + 1) * 100 ]; // フレーズを字句解析して得たトークンコードを格納する
+int tokenCodesForPhrase[ (PHRASE_LEN + 1) * 100 ]; // フレーズを字句解析して得たトークンコードを格納する
 int nextPc, wpc[WPC_LEN]; // 一致したフレーズの次のトークンを指す, ワイルドカードのトークンの場所を指す
 int wpcEnd[WPC_LEN]; // wpc[n]が式の場合、wpcEnd[n]はその式の直後のトークンを指す
 
 // tokenCodes[pc]からのトークンコード列が、phraseで指定されたトークン列と一致するかどうか調べる
 int match(int phraseId, String phrase, int pc)
 {
-  int head = phraseId * (MAX_PHRASE_LEN + 1); // フレーズを字句解析した結果を格納する（している）場所をphraseIdで指定
+  int head = phraseId * (PHRASE_LEN + 1); // フレーズを字句解析した結果を格納する（している）場所をphraseIdで指定
   int nTokens;
-  if (tokenCodesForPhrase[ head + MAX_PHRASE_LEN ] == 0) { // 含まれるトークンの個数が0のフレーズは字句解析する
+  if (tokenCodesForPhrase[ head + PHRASE_LEN ] == 0) { // 含まれるトークンの個数が0のフレーズは字句解析する
     nTokens = lexer(phrase, &tokenCodesForPhrase[head]);
-    if (nTokens > MAX_PHRASE_LEN) {
+    if (nTokens > PHRASE_LEN) {
       printf("too long phrase\n");
       exit(1);
     }
-    tokenCodesForPhrase[ head + MAX_PHRASE_LEN ] = nTokens;
+    tokenCodesForPhrase[ head + PHRASE_LEN ] = nTokens;
   }
-  nTokens = tokenCodesForPhrase[ head + MAX_PHRASE_LEN ]; // フレーズに含まれるトークンの個数を取得
+  nTokens = tokenCodesForPhrase[ head + PHRASE_LEN ]; // フレーズに含まれるトークンの個数を取得
   int tokenCode;
   int depth;
   for (int i = 0, num; i < nTokens; ++i) {
