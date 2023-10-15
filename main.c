@@ -128,9 +128,9 @@ comment:
 int tokenCodes[10000]; // トークンコードを格納する
 
 enum keyId {
-  WildCard = 0,
-  WildCardForExpr,
-  WildCardForExpr0,
+  Wildcard = 0,
+  Expr,
+  Expr0,
 
   Zero,
   One,
@@ -277,7 +277,7 @@ void initTokenCodes(String *defaultTokens, int len)
 
 #define PHRASE_LEN 31
 #define WPC_LEN 9
-int tokenCodesForPhrase[(PHRASE_LEN + 1) * 100]; // フレーズを字句解析して得たトークンコードを格納する
+int phraseTc[(PHRASE_LEN + 1) * 100]; // フレーズを字句解析して得たトークンコードを格納する
 int nextPc, wpc[WPC_LEN]; // 一致したフレーズの次のトークンを指す, ワイルドカードのトークンの場所を指す
 int wpcEnd[WPC_LEN]; // wpc[n]が式の場合、wpcEnd[n]はその式の直後のトークンを指す
 
@@ -285,23 +285,23 @@ int match(int phraseId, String phrase, int pc)
 {
   int head = phraseId * (PHRASE_LEN + 1), nTokens;
 
-  if (tokenCodesForPhrase[head + PHRASE_LEN] == 0) {
-    nTokens = lexer(phrase, &tokenCodesForPhrase[head]);
+  if (phraseTc[head + PHRASE_LEN] == 0) {
+    nTokens = lexer(phrase, &phraseTc[head]);
     if (nTokens > PHRASE_LEN) {
       printf("too long phrase\n");
       exit(1);
     }
-    tokenCodesForPhrase[head + PHRASE_LEN] = nTokens;
+    phraseTc[head + PHRASE_LEN] = nTokens;
   }
 
-  nTokens = tokenCodesForPhrase[head + PHRASE_LEN];
+  nTokens = phraseTc[head + PHRASE_LEN];
   for (int i = 0; i < nTokens; ++i) {
-    int tokenCode = tokenCodesForPhrase[head + i];
-    if (tokenCode == WildCard || tokenCode == WildCardForExpr || tokenCode == WildCardForExpr0) {
+    int phraTc = phraseTc[head + i];
+    if (phraTc == Wildcard || phraTc == Expr || phraTc == Expr0) {
       ++i;
-      int num = tokenCodesForPhrase[head + i] - Zero;
+      int num = phraseTc[head + i] - Zero;
       wpc[num] = pc; // トークンの位置（式の場合は式の開始位置）
-      if (tokenCode == WildCard) {
+      if (phraTc == Wildcard) {
         ++pc;
         continue;
       }
@@ -321,13 +321,13 @@ int match(int phraseId, String phrase, int pc)
         ++pc;
       }
       wpcEnd[num] = pc; // 式の終了位置
-      if (tokenCode == WildCardForExpr && wpc[num] == pc)
+      if (phraTc == Expr && wpc[num] == pc)
         return 0;
       if (depth > 0)
         return 0;
       continue;
     }
-    if (tokenCode != tokenCodes[pc])
+    if (phraTc != tokenCodes[pc])
       return 0;
     ++pc;
   }
@@ -440,9 +440,9 @@ void putModRM(unsigned reg, unsigned addVal, IntPtr var)
   }
 }
 
-unsigned char *instructionBegin;    // 現在の命令の開始位置（直前のセミコロンの次の位置）
-unsigned char *preInstructionBegin; // 1つ前の命令の開始位置（さらにその前のセミコロンの次の位置）
-unsigned char *setccBegin;          // SETcc命令を見つけたら、その先頭の位置を記録する
+unsigned char *instrBegin;     // 現在の命令の開始位置（直前のセミコロンの次の位置）
+unsigned char *prevInstrBegin; // 1つ前の命令の開始位置（さらにその前のセミコロンの次の位置）
+unsigned char *setccBegin;     // SETcc命令を見つけたら、その先頭の位置を記録する
 
 // トークンコードを受け取り、定数か変数かを判定する
 int isConst(int tokenCode)
@@ -522,24 +522,24 @@ void putIcX86(String instructionStr, IntPtr p0, IntPtr p1, IntPtr p2, IntPtr p3)
 // セミコロンが来たタイミングで呼ばれ、最適化を行う
 void optimizeX86()
 {
-  if (instructionBegin != ip) {
-    if (instructionBegin[0] == 0x0f && 0x90 <= instructionBegin[1] && instructionBegin[1] <= 0x9f) { // SETcc
-      setccBegin = instructionBegin;
+  if (instrBegin != ip) {
+    if (instrBegin[0] == 0x0f && 0x90 <= instrBegin[1] && instrBegin[1] <= 0x9f) { // SETcc
+      setccBegin = instrBegin;
     }
-    if (instructionBegin[0] == 0x8b && isConstM(&instructionBegin[1])) { // mov r/m16/32,r16/32
-      ip = instructionBegin;
-      --varCounters[ (AInt *) get32(&instructionBegin[2]) - vars ];
+    if (instrBegin[0] == 0x8b && isConstM(&instrBegin[1])) { // mov r/m16/32,r16/32
+      ip = instrBegin;
+      --varCounters[ (AInt *) get32(&instrBegin[2]) - vars ];
 
       unsigned reg, rm;
-      reg = rm = (instructionBegin[1] >> 3) & 7;
+      reg = rm = (instrBegin[1] >> 3) & 7;
 
-      int i = getConstM(&instructionBegin[1]);
+      int i = getConstM(&instrBegin[1]);
       if (i == 0)
         putIcX86("31_%0c", (IntPtr) (0xc0 | (reg << 3) | rm), 0, 0, 0); // 同じレジスタ同士のxorを計算して、レジスタの値を0にする
       else
         putIcX86("%0c_%1i", (IntPtr) (0xb8 + reg), (IntPtr) i, 0, 0); // mov imm16/32,r16/32
     }
-    if (instructionBegin[0] <= 0x3f && (instructionBegin[0] & 7) == 3 && isConstM(&instructionBegin[1])) {
+    if (instrBegin[0] <= 0x3f && (instrBegin[0] & 7) == 3 && isConstM(&instrBegin[1])) {
       /*
         03命令 add r/m16/32,r16/32
         0b命令 or r/m16/32,r16/32
@@ -550,48 +550,48 @@ void optimizeX86()
         33命令 xor r/m16/32,r16/32
         3b命令 cmp r/m16/32,r16/32
       */
-      ip = instructionBegin;
-      --varCounters[ (AInt *) get32(&instructionBegin[2]) - vars ];
+      ip = instrBegin;
+      --varCounters[ (AInt *) get32(&instrBegin[2]) - vars ];
 
-      unsigned reg = instructionBegin[0] & 0x38;
-      unsigned rm  = (instructionBegin[1] >> 3) & 7;
+      unsigned reg = instrBegin[0] & 0x38;
+      unsigned rm  = (instrBegin[1] >> 3) & 7;
 
-      int i = getConstM(&instructionBegin[1]);
+      int i = getConstM(&instrBegin[1]);
       if (-0x80 <= i && i <= 0x7f)
         putIcX86("83_%0c_%1c", (IntPtr) (0xc0 | reg | rm), (IntPtr) i, 0, 0); // 83 c0 ?? # opcode imm8,r/m16/32
       else
         putIcX86("81_%0c_%1i", (IntPtr) (0xc0 | reg | rm), (IntPtr) i, 0, 0); // 83 c0 ?? ?? ?? ?? # opcode imm16/32,r/m16/32
     }
-    if (instructionBegin[0] == 0x0f && instructionBegin[1] & 0xaf && isConstM(&instructionBegin[2])) { // imul r/m16/32,r16/32
-      ip = instructionBegin;
-      --varCounters[ (AInt *) get32(&instructionBegin[3]) - vars ];
+    if (instrBegin[0] == 0x0f && instrBegin[1] & 0xaf && isConstM(&instrBegin[2])) { // imul r/m16/32,r16/32
+      ip = instrBegin;
+      --varCounters[ (AInt *) get32(&instrBegin[3]) - vars ];
 
       unsigned reg, rm;
-      reg = rm = (instructionBegin[2] >> 3) & 7;
+      reg = rm = (instrBegin[2] >> 3) & 7;
 
-      int i = getConstM(&instructionBegin[2]);
+      int i = getConstM(&instrBegin[2]);
       if (-0x80 <= i && i <= 0x7f)
         putIcX86("6b_%0c_%1c", (IntPtr) (0xc0 | (reg << 3) | rm), (IntPtr) i, 0, 0); // imul imm8,rm/16/32,r16/32
       else
         putIcX86("69_%0c_%1i", (IntPtr) (0xc0 | (reg << 3) | rm), (IntPtr) i, 0, 0); // imul imm16/32,r/m16/32,r16/32
     }
-    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xc0 && instructionBegin[2] == 1) { // add 1
-      ip = instructionBegin;
-      putIcX86("%0c", (IntPtr) (0x40 + (instructionBegin[1] & 7)), 0, 0, 0); // inc r16/32
+    if (instrBegin[0] == 0x83 && (instrBegin[1] & 0xf8) == 0xc0 && instrBegin[2] == 1) { // add 1
+      ip = instrBegin;
+      putIcX86("%0c", (IntPtr) (0x40 + (instrBegin[1] & 7)), 0, 0, 0); // inc r16/32
     }
-    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xe8 && instructionBegin[2] == 1) { // sub 1
-      ip = instructionBegin;
-      putIcX86("%0c", (IntPtr) (0x48 + (instructionBegin[1] & 7)), 0, 0, 0); // dec r16/32
+    if (instrBegin[0] == 0x83 && (instrBegin[1] & 0xf8) == 0xe8 && instrBegin[2] == 1) { // sub 1
+      ip = instrBegin;
+      putIcX86("%0c", (IntPtr) (0x48 + (instrBegin[1] & 7)), 0, 0, 0); // dec r16/32
     }
-    if (instructionBegin[0] == 0x83 && (instructionBegin[1] & 0xf8) == 0xf8 && instructionBegin[2] == 0) { // cmp 0
-      ip = instructionBegin;
+    if (instrBegin[0] == 0x83 && (instrBegin[1] & 0xf8) == 0xf8 && instrBegin[2] == 0) { // cmp 0
+      ip = instrBegin;
       unsigned reg, rm;
-      reg = rm = (instructionBegin[1] & 7);
+      reg = rm = (instrBegin[1] & 7);
       putIcX86("85_%0c", (IntPtr) (0xc0 | (reg << 3) | rm), 0, 0, 0); // test op1 op2 # op1とop2に同じレジスタを指定する。結果が0のときZFが1
     }
-    if (instructionBegin[0] == 0x8b && preInstructionBegin != NULL && preInstructionBegin[0] == 0x89 &&
-        instructionBegin[1] == 0x05 && preInstructionBegin[1] == 0x05 &&
-        get32(instructionBegin + 2) == get32(preInstructionBegin + 2)) {
+    if (instrBegin[0] == 0x8b && prevInstrBegin != NULL && prevInstrBegin[0] == 0x89 &&
+        instrBegin[1] == 0x05 && prevInstrBegin[1] == 0x05 &&
+        get32(instrBegin + 2) == get32(prevInstrBegin + 2)) {
       /*
         直前に書いたところをすぐに読み込む場合は、その読み込み命令(8b命令）を削除する。
         書き込み対象が一時変数の場合は、書き込み命令（89命令）も削除する。
@@ -599,7 +599,7 @@ void optimizeX86()
         89 05 94 0a 42 00; // _t1 = eax; 無駄な書き込み
         8b 05 94 0a 42 00; // eax = _t1; 無駄な読み込み
       */
-      ip = instructionBegin; // 8b命令を削除
+      ip = instrBegin; // 8b命令を削除
       int tokenCode = (IntPtr) get32(preInstructionBegin + 2) - vars;
       --varCounters[tokenCode];
 
@@ -608,8 +608,8 @@ void optimizeX86()
         --varCounters[tokenCode];
       }
     }
-    preInstructionBegin = instructionBegin;
-    instructionBegin = ip;
+    prevInstrBegin = instrBegin;
+    instrBegin = ip;
   }
   if (setccBegin + 14 == ip && memcmp(&setccBegin[2], "\xc0\x0f\xb6\xc0\x85\xc0\x0f", 7) == 0 &&
       0x84 <= setccBegin[9] && setccBegin[9] <= 0x85) {
@@ -642,8 +642,8 @@ void optimizeX86()
       85 c0;
       0f 84 0c 00 00 00; // 84 が*(setccBegin + 9)
     */
-    instructionBegin = ip = setccBegin + 6; // 3行目の85の位置
-    preInstructionBegin = setccBegin = NULL;
+    instrBegin = ip = setccBegin + 6; // 3行目の85の位置
+    prevInstrBegin = setccBegin = NULL;
     jmps[jp - 1] = ip - 4 - instructions;
   }
 }
@@ -928,7 +928,7 @@ int epc, epcEnd; // exprのためのpc（式のどこを実行しているかを
 
 int evalExpression(int precedenceLevel); // evalInfixExpression()が参照するので
 int expression(int num);
-int exprPutIcX86(int er, int len, void *fn, int *err);
+int exprPutIcX86(int res, int len, void *fn, int *err);
 
 #define N_PREFIX 2
 #define N_INFIX 15
@@ -993,34 +993,32 @@ int evalInfixExpression(int lhs, int precedenceLevel, int op)
 
 int evalExpression(int precedenceLevel)
 {
-  int er = -1; // ここまでの計算結果が入っている変数のトークンコード（vars[er]で計算結果にアクセスできる）
-  int e0 = 0, e1 = 0;
-
+  int res = -1, e0 = 0, e1 = 0;
   nextPc = 0;
 
   if (match(99, "( !!**0 )", epc)) { // 括弧
-    er = expression(0);
+    res = expression(0);
   }
   else if (tokenCodes[epc] == PlusPlus) { // 前置インクリメント
     ++epc;
-    er = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
-    putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[er], 0, 0, 0);
+    res = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
+    putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[res], 0, 0, 0);
   }
   else if (tokenCodes[epc] == Minus) { // 単項マイナス
     ++epc;
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
-    er = calcConstForPrefixOp(Minus, e0);
-    if (er == 0) {
-      er = tmpAlloc();
-      putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
+    res = calcConstForPrefixOp(Minus, e0);
+    if (res == 0) {
+      res = tmpAlloc();
+      putIcX86("8b_%1m0; f7_d8; 89_%0m0;", &vars[res], &vars[e0], 0, 0);
     }
   }
   else if (match(72, "mul64shr(!!**0, !!**1, !!**2)", epc)) {
     e0 = expression(0);
     e1 = expression(1);
     int e2 = expression(2);
-    er = tmpAlloc();
-    putIcX86("8b_%2m1; 8b_%0m0; f7_%1m5; 0f_ad_d0; 89_%3m0;", &vars[e0], &vars[e1], &vars[e2], &vars[er]);
+    res = tmpAlloc();
+    putIcX86("8b_%2m1; 8b_%0m0; f7_%1m5; 0f_ad_d0; 89_%3m0;", &vars[e0], &vars[e1], &vars[e2], &vars[res]);
     /*
       8b_%2m1  -> mov r/m16/32,%ecx
       8b_%0m0  -> mov r/m16/32,%eax
@@ -1033,30 +1031,30 @@ int evalExpression(int precedenceLevel)
       e0 = -1;
   }
   else if (match(73, "aRgb8(!!**0, !!**1, !!**2)", epc)) {
-    er = exprPutIcX86(er, 3, call_aRgb8, &e0);
+    res = exprPutIcX86(res, 3, call_aRgb8, &e0);
   }
   else if (match(74, "aOpenWin(!!**0, !!**1, !!***2, !!***8)", epc)) {
     exprPutIcX86(0, 3, call_aOpenWin, &e0);
     putIcX86("85_c0; 0f_85_%0l;", &vars[toExit], 0, 0, 0); // test %eax,%eax; jz rel16/32;
-    er = Zero;
+    res = Zero;
   }
   else if (match(75, "aXorShift32()", epc)) {
-    er = exprPutIcX86(er, 0, call_aXorShift32, &e0);
+    res = exprPutIcX86(res, 0, call_aXorShift32, &e0);
   }
   else if (match(76, "aGetPix(!!**8, !!**0, !!**1)", epc)) {
-    er = exprPutIcX86(er, 2, call_aGetPix, &e0);
+    res = exprPutIcX86(res, 2, call_aGetPix, &e0);
   }
   else if (match(77, "ff16sin(!!**0)", epc)) {
-    er = exprPutIcX86(er, 1, ff16sin, &e0);
+    res = exprPutIcX86(res, 1, ff16sin, &e0);
   }
   else if (match(78, "ff16cos(!!**0)", epc)) {
-    er = exprPutIcX86(er, 1, ff16cos, &e0);
+    res = exprPutIcX86(res, 1, ff16cos, &e0);
   }
   else if (match(79, "aInkey(!!***8, !!**0)", epc)) {
-    er = exprPutIcX86(er, 1, call_aInkey, &e0);
+    res = exprPutIcX86(res, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
-    er = tokenCodes[epc];
+    res = tokenCodes[epc];
     ++epc;
   }
   if (nextPc > 0)
@@ -1064,7 +1062,7 @@ int evalExpression(int precedenceLevel)
   for (;;) {
     tmpFree(e0);
     tmpFree(e1);
-    if (er < 0 || e0 < 0 || e1 < 0) // ここまででエラーがあれば、処理を打ち切り
+    if (res < 0 || e0 < 0 || e1 < 0) // ここまででエラーがあれば、処理を打ち切り
       return -1;
     if (epc >= epcEnd)
       break;
@@ -1074,17 +1072,17 @@ int evalExpression(int precedenceLevel)
     e0 = e1 = 0;
     if (tokenCode == PlusPlus) { // 後置インクリメント
       ++epc;
-      e0 = er;
-      er = tmpAlloc();
-      putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[er], &vars[e0], 0, 0);
+      e0 = res;
+      res = tmpAlloc();
+      putIcX86("8b_%1m0; 89_%0m0; 40; 89_%1m0;", &vars[res], &vars[e0], 0, 0);
     }
     else if (match(71, "[!!**0]=", epc)) {
-      e1 = er;
+      e1 = res;
       e0 = expression(0);
       epc = nextPc;
-      er = evalExpression(getPrecedenceLevel(Infix, Assign));
+      res = evalExpression(getPrecedenceLevel(Infix, Assign));
       //                                               base       index
-      putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[er], 0);
+      putIcX86("8b_%2m0; 8b_%0m2; 8b_%1m1; 89_04_8a;", &vars[e1], &vars[e0], &vars[res], 0);
       /*
         8b_%2m0  -> mov r/m16/32,%eax
         8b_%0m2  -> mov r/m16/32,%edx
@@ -1093,11 +1091,11 @@ int evalExpression(int precedenceLevel)
       */
     }
     else if (match(70, "[!!**0]", epc)) {
-      e1 = er;
-      er = tmpAlloc();
+      e1 = res;
+      res = tmpAlloc();
       e0 = expression(0);
       //                                               base       index
-      putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[er], 0);
+      putIcX86("8b_%0m2; 8b_%1m1; 8b_04_8a; 89_%2m0;", &vars[e1], &vars[e0], &vars[res], 0);
       /*
         8b_%0m2  -> mov r/m16/32,%edx
         8b_%1m1  -> mov r/m16/32,%ecx
@@ -1124,19 +1122,19 @@ int evalExpression(int precedenceLevel)
       case Equal: case NotEq:
       case And:
       case AndAnd:
-        er = evalInfixExpression(er, encountered - 1, tokenCode);
+        res = evalInfixExpression(res, encountered - 1, tokenCode);
         break;
       case Assign:
         ++epc;
         e0 = evalExpression(encountered);
-        putIcX86("8b_%1m0; 89_%0m0;", &vars[er], &vars[e0], 0, 0);
+        putIcX86("8b_%1m0; 89_%0m0;", &vars[res], &vars[e0], 0, 0);
         break;
       }
     }
     else
       break;
   }
-  return er;
+  return res;
 }
 
 // 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinstructions[]に書き込む
@@ -1154,7 +1152,7 @@ int expression(int num)
   buf[WPC_LEN * 2] = nextPc;
 
   epc = wpc[num]; epcEnd = wpcEnd[num];
-  int er = evalExpression(LOWEST_PRECEDENCE);
+  int res = evalExpression(LOWEST_PRECEDENCE);
   if (epc < epcEnd)
     return -1;
 
@@ -1164,7 +1162,7 @@ int expression(int num)
     wpcEnd[i] = buf[i + WPC_LEN];
   }
   nextPc = buf[WPC_LEN * 2];
-  return er;
+  return res;
 }
 
 enum { ConditionIsTrue = 0, ConditionIsFalse };
@@ -1172,7 +1170,7 @@ enum { ConditionIsTrue = 0, ConditionIsFalse };
 //                       je    jne   jl    jge   jle   jg
 int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
 
-// 条件式wpc[num]を評価して、その結果に応じてlabel（トークンコード）に分岐する内部コードを生成する
+// 条件式wpc[i]を評価して、その結果に応じてlabel（トークンコード）に分岐する内部コードを生成する
 void ifgoto(int num, int conditionType, int label) {
   int conditionBegin = wpc   [num];
   int conditionEnd   = wpcEnd[num];
@@ -1244,7 +1242,7 @@ void defLabel(int tokenCode)
   }
 
   vars[tokenCode] = ip - instructions;
-  preInstructionBegin = setccBegin = NULL;
+  prevInstrBegin = setccBegin = NULL;
 }
 
 #define BLOCK_INFO_UNIT_SIZE 10
@@ -1255,7 +1253,7 @@ enum { IfLabel0 = 1, IfLabel1 };
 enum { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
 // lenで渡した数の式を評価し、その結果を使ってputIcX86をする
-int exprPutIcX86(int er, int len, void *fn, int *err)
+int exprPutIcX86(int res, int len, void *fn, int *err)
 {
   int e[9] = {0};
   for (int i = 0; i < len; ++i) {
@@ -1269,11 +1267,11 @@ int exprPutIcX86(int er, int len, void *fn, int *err)
   for (int i = 0; i < len; ++i)
     tmpFree(e[i]);
 
-  if (er != 0) {
-    er = tmpAlloc();
-    putIcX86("89_%0m0;", &vars[er], 0, 0, 0);
+  if (res != 0) {
+    res = tmpAlloc();
+    putIcX86("89_%0m0;", &vars[res], 0, 0, 0);
   }
-  return er;
+  return res;
 }
 
 int codedump;
@@ -1286,8 +1284,8 @@ int compile(String src)
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
-  instructionBegin = ip = instructions;
-  preInstructionBegin = setccBegin = NULL;
+  instrBegin = ip = instructions;
+  prevInstrBegin = setccBegin = NULL;
   jp = 0;
   putIcX86("60; 83_ec_7c;", 0, 0, 0, 0); // pusha; sub $0x7c,%esp;
   regVarSaveLoad(RvLoad); // 前回実行時のレジスタ変数の値を引き継ぐ
