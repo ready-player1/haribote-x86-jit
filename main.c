@@ -690,7 +690,6 @@ void decodeX86(String str, IntPtr *operands)
       int i = str[pos + 1] - '0'; // 参照する追加引数の番号
 
       switch (str[pos + 2]) {
-      int j, k;
       case 'm': // ModR/Mバイト
         /*
           ModR/Mバイトは、オペランドを参照する多くの命令でオペコードの次に置くことになっている1バイトで、
@@ -729,26 +728,28 @@ void decodeX86(String str, IntPtr *operands)
           「%iLjk」と書き、オペランドi, j, kの値に基づいて条件分岐を行い、
           レジスタ変数を使う場合とそうでない場合とで処理を分岐させる。
         */
-        j = str[pos + 3] - '0'; // 参照する追加引数の番号
-        k = str[pos + 4] - '0'; // 参照する追加引数の番号
+        {
+          int j = str[pos + 3] - '0'; // 参照する追加引数の番号
+          int k = str[pos + 4] - '0'; // 参照する追加引数の番号
 
-        int regVarNum = getRegVarNum(operands[j]);
-        if (isRegVar(regVarNum) && operands[i] == operands[j]) {
-          regCode = regVarNum2regCode[regVarNum];
-        }
-        else if (isRegVar(regVarNum) && operands[j] != operands[k]) {
-          reg = regCode = regVarNum2regCode[regVarNum];
-          *ip = 0x8b;
-          ++ip;
-          putModRM(reg, addVal, operands[i]);
-          addVal = 0;
-        }
-        else {
-          reg = regCode = 0;
-          *ip = 0x8b;
-          ++ip;
-          putModRM(reg, addVal, operands[i]);
-          addVal = 0;
+          int regVarNum = getRegVarNum(operands[j]);
+          if (isRegVar(regVarNum) && operands[i] == operands[j]) {
+            regCode = regVarNum2regCode[regVarNum];
+          }
+          else if (isRegVar(regVarNum) && operands[j] != operands[k]) {
+            reg = regCode = regVarNum2regCode[regVarNum];
+            *ip = 0x8b;
+            ++ip;
+            putModRM(reg, addVal, operands[i]);
+            addVal = 0;
+          }
+          else {
+            reg = regCode = 0;
+            *ip = 0x8b;
+            ++ip;
+            putModRM(reg, addVal, operands[i]);
+            addVal = 0;
+          }
         }
         pos += 5;
         continue;
