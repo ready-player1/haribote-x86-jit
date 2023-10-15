@@ -266,7 +266,7 @@ String defaultTokens[] = {
   "prints",
 };
 
-void initTokenCodes(String *defaultTokens, int len)
+void initTc(String *defaultTokens, int len)
 {
   assert(len == EndOfKeys);
   for (int i = 0; i < len; ++i)
@@ -1668,7 +1668,7 @@ void aMain()
 {
   unsigned char text[10000]; // ソースコード
   instructions = mallocRWX(1024 * 1024);
-  initTokenCodes(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
+  initTc(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
   if (aArgc >= 2) {
     if (loadText((String) aArgv[1], text, 10000) != 0)
       exit(1);
