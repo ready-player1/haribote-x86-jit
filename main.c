@@ -1677,7 +1677,7 @@ void *mallocRWX(int len)
 
 void aMain()
 {
-  unsigned char text[10000]; // ソースコード
+  unsigned char text[10000];
   instructions = mallocRWX(1024 * 1024);
   initTc(defaultTokens, sizeof defaultTokens / sizeof defaultTokens[0]);
   if (aArgc >= 2) {
@@ -1687,23 +1687,25 @@ void aMain()
     exit(0);
   }
 
-  for (int nLines = 1;; ++nLines) { // Read-Eval-Print Loop
+  for (int nLines = 1;; ++nLines) {
     printf("[%d]> ", nLines);
     fgets(text, 10000, stdin);
     int inputLen = strlen(text);
-    if (text[inputLen - 1] == '\n') // chomp
+    if (text[inputLen - 1] == '\n')
       text[inputLen - 1] = 0;
 
     String semicolonPos = removeTrailingSemicolon(text, inputLen - 1);
     if (strcmp(text, "exit") == 0)
       exit(0);
-    if (strncmp(text, "run ", 4) == 0) {
-      if (loadText(&text[4], text, 10000) == 0)
-        run(text);
-      continue;
+    else if (strncmp(text, "run ", 4) == 0) {
+      if (loadText(&text[4], text, 10000) != 0)
+        continue;
+      run(text);
     }
-    if (semicolonPos)
-      *semicolonPos = ';';
-    run(text);
+    else {
+      if (semicolonPos)
+        *semicolonPos = ';';
+      run(text);
+    }
   }
 }
