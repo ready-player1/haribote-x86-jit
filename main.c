@@ -1,4 +1,5 @@
 #include <acl.c>
+#include <assert.h>
 
 typedef unsigned char *String;
 
@@ -267,10 +268,7 @@ String defaultTokens[] = {
 
 void initTokenCodes(String *defaultTokens, int len)
 {
-  if (len != EndOfKeys) {
-    printf("warong number of default tokens: expected %d, got %d\n", EndOfKeys, len);
-    exit(1);
-  }
+  assert(len == EndOfKeys);
   for (int i = 0; i < len; ++i)
     tokenCodes[i] = getTokenCode(defaultTokens[i], strlen(defaultTokens[i]));
 }
@@ -287,10 +285,7 @@ int match(int phraseId, String phrase, int pc)
 
   if (phraseTc[head + PHRASE_LEN] == 0) {
     nTokens = lexer(phrase, &phraseTc[head]);
-    if (nTokens > PHRASE_LEN) {
-      printf("too long phrase\n");
-      exit(1);
-    }
+    assert(nTokens <= PHRASE_LEN);
     phraseTc[head + PHRASE_LEN] = nTokens;
   }
 
@@ -364,6 +359,7 @@ String opBins[] = { // 二項演算子のための機械語
 
 inline static String getOpBin(int tokenCode)
 {
+  assert(Equal <= tokenCode && tokenCode < Assign);
   return opBins[tokenCode - Equal];
 }
 
