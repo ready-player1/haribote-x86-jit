@@ -80,7 +80,7 @@ inline static int isNumber(unsigned char ch)
   return '0' <= ch && ch <= '9';
 }
 
-int lexer(String str, int *tokenCodes)
+int lexer(String str, int *tc)
 {
   int pos = 0, nTokens = 0; // 現在読んでいる位置, これまでに変換したトークンの数
   int len;
@@ -120,13 +120,13 @@ comment:
     }
     if (len == 7 && strncmp(&str[pos], "include", 7) == 0) // includeを無視する
       goto comment;
-    tokenCodes[nTokens] = getTokenCode(&str[pos], len);
+    tc[nTokens] = getTokenCode(&str[pos], len);
     pos += len;
     ++nTokens;
   }
 }
 
-int tokenCodes[10000]; // トークンコードを格納する
+int tc[10000]; // トークンコードを格納する
 
 enum keyId {
   Wildcard = 0,
@@ -270,7 +270,7 @@ void initTokenCodes(String *defaultTokens, int len)
 {
   assert(len == EndOfKeys);
   for (int i = 0; i < len; ++i)
-    tokenCodes[i] = getTokenCode(defaultTokens[i], strlen(defaultTokens[i]));
+    tc[i] = getTokenCode(defaultTokens[i], strlen(defaultTokens[i]));
 }
 
 #define PHRASE_LEN 31
@@ -302,14 +302,14 @@ int match(int phraseId, String phrase, int pc)
       }
       int depth = 0; // 括弧の深さ
       for (;;) {
-        if (tokenCodes[pc] == Semicolon)
+        if (tc[pc] == Semicolon)
           break;
-        if (tokenCodes[pc] == Comma && depth == 0)
+        if (tc[pc] == Comma && depth == 0)
           break;
 
-        if (tokenCodes[pc] == Lparen || tokenCodes[pc] == Lbracket)
+        if (tc[pc] == Lparen || tc[pc] == Lbracket)
           ++depth;
-        if (tokenCodes[pc] == Rparen || tokenCodes[pc] == Rbracket)
+        if (tc[pc] == Rparen || tc[pc] == Rbracket)
           --depth;
         if (depth < 0)
           break;
@@ -322,7 +322,7 @@ int match(int phraseId, String phrase, int pc)
         return 0;
       continue;
     }
-    if (phraTc != tokenCodes[pc])
+    if (phraTc != tc[pc])
       return 0;
     ++pc;
   }
@@ -995,12 +995,12 @@ int evalExpression(int precedenceLevel)
   if (match(99, "( !!**0 )", epc)) { // 括弧
     res = expression(0);
   }
-  else if (tokenCodes[epc] == PlusPlus) { // 前置インクリメント
+  else if (tc[epc] == PlusPlus) { // 前置インクリメント
     ++epc;
     res = evalExpression(getPrecedenceLevel(Prefix, PlusPlus));
     putIcX86("8b_%0m0; 40; 89_%0m0;", &vars[res], 0, 0, 0);
   }
-  else if (tokenCodes[epc] == Minus) { // 単項マイナス
+  else if (tc[epc] == Minus) { // 単項マイナス
     ++epc;
     e0 = evalExpression(getPrecedenceLevel(Prefix, Minus));
     res = calcConstForPrefixOp(Minus, e0);
@@ -1050,7 +1050,7 @@ int evalExpression(int precedenceLevel)
     res = exprPutIcX86(res, 1, call_aInkey, &e0);
   }
   else { // 変数もしくは定数
-    res = tokenCodes[epc];
+    res = tc[epc];
     ++epc;
   }
   if (nextPc > 0)
@@ -1064,9 +1064,8 @@ int evalExpression(int precedenceLevel)
       break;
 
     int encountered; // ぶつかった演算子の優先順位を格納する
-    int tokenCode = tokenCodes[epc];
     e0 = e1 = 0;
-    if (tokenCode == PlusPlus) { // 後置インクリメント
+    if (tc[epc] == PlusPlus) { // 後置インクリメント
       ++epc;
       e0 = res;
       res = tmpAlloc();
@@ -1100,7 +1099,7 @@ int evalExpression(int precedenceLevel)
       */
       epc = nextPc;
     }
-    else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
+    else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tc[epc]))) {
       /*
         「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも
         低いか又は等しい(値が大きいか又は等しい)ときは、このブロックを実行して
@@ -1110,7 +1109,7 @@ int evalExpression(int precedenceLevel)
         高い(値が小さい)ときは、このブロックを実行せずにこれまでに式を評価した
         結果を呼び出し元に返す。
       */
-      switch (tokenCode) {
+      switch (tc[epc]) {
       case Multi: case Divi: case Mod:
       case Plus: case Minus:
       case ShiftRight:
@@ -1118,7 +1117,7 @@ int evalExpression(int precedenceLevel)
       case Equal: case NotEq:
       case And:
       case AndAnd:
-        res = evalInfixExpression(res, encountered - 1, tokenCode);
+        res = evalInfixExpression(res, encountered - 1, tc[epc]);
         break;
       case Assign:
         ++epc;
@@ -1171,7 +1170,7 @@ void ifgoto(int num, int conditionType, int label) {
   int conditionBegin = wpc   [num];
   int conditionEnd   = wpcEnd[num];
 
-  int *tc = tokenCodes, operator = tc[conditionBegin + 1];
+  int operator = tc[conditionBegin + 1];
   if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
     putIcX86("%2L22; 3b_&<<3:%3m0; 0f_%0c_%1l;",
         (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
@@ -1274,9 +1273,7 @@ int codedump;
 
 int compile(String src)
 {
-  int *tc = tokenCodes; // トークンコードを格納している配列
-
-  int nTokens = lexer(src, tokenCodes);
+  int nTokens = lexer(src, tc);
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
