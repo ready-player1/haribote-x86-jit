@@ -1166,17 +1166,17 @@ enum { ConditionIsTrue = 0, ConditionIsFalse };
 int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
 
 // 条件式wpc[i]を評価して、その結果に応じてlabel（トークンコード）に分岐する内部コードを生成する
-void ifgoto(int num, int conditionType, int label) {
-  int conditionBegin = wpc   [num];
-  int conditionEnd   = wpcEnd[num];
+void ifgoto(int i, int conditionType, int label) {
+  int begin = wpc   [i];
+  int end   = wpcEnd[i];
 
-  int operator = tc[conditionBegin + 1];
-  if ((conditionBegin + 3 == conditionEnd) && (Equal <= operator && operator <= Gtr)) {
+  int op = tc[begin + 1];
+  if ((begin + 3 == end) && (Equal <= op && op <= Gtr)) {
     putIcX86("%2L22; 3b_&<<3:%3m0; 0f_%0c_%1l;",
-        (IntPtr) conditionCodes[ (operator - Equal) ^ conditionType ],
+        (IntPtr) conditionCodes[ (op - Equal) ^ conditionType ],
         &vars[label],
-        &vars[tc[conditionBegin]],
-        &vars[tc[conditionBegin + 2]]);
+        &vars[tc[begin]],
+        &vars[tc[begin + 2]]);
     /*
       ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
 
@@ -1186,8 +1186,8 @@ void ifgoto(int num, int conditionType, int label) {
     */
   }
   else {
-    num = expression(num);
-    putIcX86("%2L22; 85_&9:c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[num], 0);
+    i = expression(i);
+    putIcX86("%2L22; 85_&9:c0; 0f_%0c_%1l;", (IntPtr) (0x85 - conditionType), &vars[label], &vars[i], 0);
     /*
       ユーザがレジスタ変数を使わない場合は次の機械語を生成する。
 
@@ -1195,7 +1195,7 @@ void ifgoto(int num, int conditionType, int label) {
       85_c0      -> test %eax,%eax
       0f_%0c_%1l -> jcc rel16/32
     */
-    tmpFree(num);
+    tmpFree(i);
   }
 }
 
