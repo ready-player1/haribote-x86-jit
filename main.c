@@ -1652,6 +1652,16 @@ int run(String src)
   return 0;
 }
 
+String removeTrailingSemicolon(String str, size_t len) {
+  for (int i = len - 1; i >= 0; --i) {
+    if (str[i] != ';')
+      continue;
+    str[i] = 0;
+    return &str[i];
+  }
+  return NULL;
+}
+
 #include <unistd.h>
 #include <sys/mman.h>
 
@@ -1684,17 +1694,7 @@ void aMain()
     if (text[inputLen - 1] == '\n') // chomp
       text[inputLen - 1] = 0;
 
-    int hasRemovedSemicolon = 0;
-    char *semicolonPos;
-    for (int i = strlen(text) - 1; i >= 0; --i) {
-      if (text[i] == ';') {
-        text[i] = 0;
-        semicolonPos = &text[i];
-        hasRemovedSemicolon = 1;
-        break;
-      }
-    }
-
+    String semicolonPos = removeTrailingSemicolon(text, inputLen - 1);
     if (strcmp(text, "exit") == 0)
       exit(0);
     if (strncmp(text, "run ", 4) == 0) {
@@ -1702,7 +1702,7 @@ void aMain()
         run(text);
       continue;
     }
-    if (hasRemovedSemicolon)
+    if (semicolonPos)
       *semicolonPos = ';';
     run(text);
   }
