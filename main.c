@@ -8,8 +8,8 @@ int loadText(String path, String text, int size)
 
   int startPos = path[0] == '"'; // ダブルクォートがあれば外す
   int i = 0;
-  while (path[ startPos + i ] != 0 && path[ startPos + i ] != '"') {
-    buf[i] = path[ startPos + i ];
+  while (path[startPos + i] != 0 && path[startPos + i] != '"') {
+    buf[i] = path[startPos + i];
     ++i;
   }
   buf[i] = 0;
@@ -27,14 +27,14 @@ int loadText(String path, String text, int size)
 }
 
 #define MAX_TOKEN_CODE 1000 // 格納できるトークンコードの最大値
-String tokenStrs[ MAX_TOKEN_CODE + 1 ]; // 添字に指定したトークンコードに対応するトークン文字列のポインタを格納する
-int    tokenLens[ MAX_TOKEN_CODE + 1 ]; // トークン文字列の長さを格納する
-unsigned char tokenBuf[ (MAX_TOKEN_CODE + 1) * 10 ]; // トークン文字列の実体を格納する
+String tokenStrs[MAX_TOKEN_CODE + 1];
+int    tokenLens[MAX_TOKEN_CODE + 1];
 
-AInt vars[ MAX_TOKEN_CODE + 1 ]; // 変数
+AInt vars[MAX_TOKEN_CODE + 1];
 
 int getTokenCode(String str, int len)
 {
+  static unsigned char tokenBuf[(MAX_TOKEN_CODE + 1) * 10];
   static int nTokens = 0, unusedHead = 0; // 登録済みのトークンの数, 未使用領域へのポインタ
 
   int i;
@@ -53,6 +53,7 @@ int getTokenCode(String str, int len)
     tokenLens[i] = len;
     unusedHead += len + 1;
     ++nTokens;
+
     vars[i] = strtol(tokenStrs[i], NULL, 0); // 定数だった場合に初期値を設定（定数ではないときは0になる）
     if (tokenStrs[i][0] == '"') {
       char *p = malloc(len - 1);
@@ -276,56 +277,42 @@ void initTokenCodes(String *defaultTokens, int len)
 
 #define PHRASE_LEN 31
 #define WPC_LEN 9
-int tokenCodesForPhrase[ (PHRASE_LEN + 1) * 100 ]; // フレーズを字句解析して得たトークンコードを格納する
+int tokenCodesForPhrase[(PHRASE_LEN + 1) * 100]; // フレーズを字句解析して得たトークンコードを格納する
 int nextPc, wpc[WPC_LEN]; // 一致したフレーズの次のトークンを指す, ワイルドカードのトークンの場所を指す
 int wpcEnd[WPC_LEN]; // wpc[n]が式の場合、wpcEnd[n]はその式の直後のトークンを指す
 
-// tokenCodes[pc]からのトークンコード列が、phraseで指定されたトークン列と一致するかどうか調べる
 int match(int phraseId, String phrase, int pc)
 {
-  int head = phraseId * (PHRASE_LEN + 1); // フレーズを字句解析した結果を格納する（している）場所をphraseIdで指定
-  int nTokens;
-  if (tokenCodesForPhrase[ head + PHRASE_LEN ] == 0) { // 含まれるトークンの個数が0のフレーズは字句解析する
+  int head = phraseId * (PHRASE_LEN + 1), nTokens;
+
+  if (tokenCodesForPhrase[head + PHRASE_LEN] == 0) {
     nTokens = lexer(phrase, &tokenCodesForPhrase[head]);
     if (nTokens > PHRASE_LEN) {
       printf("too long phrase\n");
       exit(1);
     }
-    tokenCodesForPhrase[ head + PHRASE_LEN ] = nTokens;
+    tokenCodesForPhrase[head + PHRASE_LEN] = nTokens;
   }
-  nTokens = tokenCodesForPhrase[ head + PHRASE_LEN ]; // フレーズに含まれるトークンの個数を取得
-  int tokenCode;
-  int depth;
-  for (int i = 0, num; i < nTokens; ++i) {
-    tokenCode = tokenCodesForPhrase[head + i];
+
+  nTokens = tokenCodesForPhrase[head + PHRASE_LEN];
+  for (int i = 0; i < nTokens; ++i) {
+    int tokenCode = tokenCodesForPhrase[head + i];
     if (tokenCode == WildCard || tokenCode == WildCardForExpr || tokenCode == WildCardForExpr0) {
-      /*
-        WildCard（!!*#）
-        任意の1トークンにマッチする（#は0～8までの数字）。
-
-        WildCardForExpr（!!**#）
-        任意の式にマッチする（#は0～8までの数字）。
-        ただし、式は1トークン以上の長さでなければいけない）。
-
-        WildCardForExpr0（!!***#）
-        任意の式にマッチする（#は0～8までの数字）。
-        ただし、式は長さゼロでもよい。
-      */
       ++i;
-      num = tokenCodesForPhrase[head + i] - Zero; // 後続の番号を取得
-      wpc[num] = pc; // トークン・式の開始位置
+      int num = tokenCodesForPhrase[head + i] - Zero;
+      wpc[num] = pc; // トークンの位置（式の場合は式の開始位置）
       if (tokenCode == WildCard) {
         ++pc;
         continue;
       }
-      depth = 0; // 括弧の深さ
+      int depth = 0; // 括弧の深さ
       for (;;) {
         if (tokenCodes[pc] == Semicolon)
           break;
         if (tokenCodes[pc] == Comma && depth == 0)
           break;
 
-        if (tokenCodes[pc] == Lparen || tokenCodes[pc] == Lbracket) // 手抜きで ( と [ を区別せずに数えている
+        if (tokenCodes[pc] == Lparen || tokenCodes[pc] == Lbracket)
           ++depth;
         if (tokenCodes[pc] == Rparen || tokenCodes[pc] == Rbracket)
           --depth;
@@ -341,11 +328,11 @@ int match(int phraseId, String phrase, int pc)
       continue;
     }
     if (tokenCode != tokenCodes[pc])
-      return 0; // マッチせず
+      return 0;
     ++pc;
   }
   nextPc = pc;
-  return 1; // マッチした
+  return 1;
 }
 
 typedef AInt *IntPtr;
@@ -724,9 +711,6 @@ void decodeX86(String str, IntPtr *operands)
           mod=10: [レジスタ+disp16/32]
           mod=11: レジスタ
 
-          disp8/16/32はレジスタを指定する場合の変位（displacement）のことで、ベースアドレスに加算して
-          実効アドレスを生成する。
-
           regフィールドは、レジスタ番号や追加オペコード情報を指定する。
 
           r/mフィールドは、modフィールドと組み合わせて24個のアドレッシングモードと8個のレジスタをコード化する。
@@ -839,7 +823,6 @@ void regVarSaveLoad(int op)
 #define N_TMPS 10
 char tmpFlags[N_TMPS];
 
-// 未使用の一時変数を確保する
 int tmpAlloc()
 {
   int i = 0;
@@ -852,7 +835,6 @@ int tmpAlloc()
   return Tmp0 + i;
 }
 
-// 一時変数を未使用の状態に戻す（ただし、指定されたトークンコードが一時変数でないときは何もしない）
 void tmpFree(int tokenCode)
 {
   if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
@@ -870,7 +852,7 @@ int ff16cos(int x) { return (int) (cos(x * (2 * 3.14159265358979323 / 65536)) * 
 
 int toExit;
 
-// acl library functions call
+// acl library functions
 AWindow *win;
 
 int  call_aRgb8(int r, int g, int b)    { return aRgb8(r, g, b); }
@@ -923,8 +905,7 @@ int bitblit(int xsiz, int ysiz, int x0, int y0, int *ary)
     p32 += win->xsiz;
   }
 }
-
-// array
+// end of acl library functions
 
 AInt *aryNew(int nElems)
 {
@@ -952,7 +933,7 @@ int exprPutIcX86(int er, int len, void *fn, int *err);
 #define N_PREFIX 2
 #define N_INFIX 15
 
-enum notationStyle { Prefix = 0, Infix = N_PREFIX + 1 };
+enum { Prefix = 0, Infix = N_PREFIX + 1 };
 
 typedef struct precedence {
   int operator;
@@ -1080,9 +1061,6 @@ int evalExpression(int precedenceLevel)
   }
   if (nextPc > 0)
     epc = nextPc;
-
-  int encountered; // ぶつかった演算子の優先順位を格納する
-  int tokenCode;
   for (;;) {
     tmpFree(e0);
     tmpFree(e1);
@@ -1091,8 +1069,9 @@ int evalExpression(int precedenceLevel)
     if (epc >= epcEnd)
       break;
 
+    int encountered; // ぶつかった演算子の優先順位を格納する
+    int tokenCode = tokenCodes[epc];
     e0 = e1 = 0;
-    tokenCode = tokenCodes[epc];
     if (tokenCode == PlusPlus) { // 後置インクリメント
       ++epc;
       e0 = er;
@@ -1129,14 +1108,15 @@ int evalExpression(int precedenceLevel)
     }
     else if (precedenceLevel >= (encountered = getPrecedenceLevel(Infix, tokenCode))) {
       /*
-        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも低いか又は等しい
-        (値が大きいか又は等しい)ときは、このブロックを実行して中置演算子を評価する。
+        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも
+        低いか又は等しい(値が大きいか又は等しい)ときは、このブロックを実行して
+        中置演算子を評価する。
 
-        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも高い(値が小さい)
-        ときは、このブロックを実行せずにこれまでに式を評価した結果を呼び出し元に返す。
+        「引数として渡された優先順位」が「ぶつかった演算子の優先順位」よりも
+        高い(値が小さい)ときは、このブロックを実行せずにこれまでに式を評価した
+        結果を呼び出し元に返す。
       */
       switch (tokenCode) {
-      // 左結合
       case Multi: case Divi: case Mod:
       case Plus: case Minus:
       case ShiftRight:
@@ -1146,7 +1126,6 @@ int evalExpression(int precedenceLevel)
       case AndAnd:
         er = evalInfixExpression(er, encountered - 1, tokenCode);
         break;
-      // 右結合
       case Assign:
         ++epc;
         e0 = evalExpression(encountered);
@@ -1163,14 +1142,10 @@ int evalExpression(int precedenceLevel)
 // 引数として渡したワイルドカード番号にマッチした式をコンパイルしてinstructions[]に書き込む
 int expression(int num)
 {
-  int expressionBegin = wpc   [num];
-  int expressionEnd   = wpcEnd[num];
-  if (expressionBegin == expressionEnd)
+  if (wpc[num] == wpcEnd[num])
     return 0;
 
-  // evalExpression()の中でmatch()やexpression()を呼び出すこともあり得るので、変数を退避しておく
-  int oldEpc    = epc;
-  int oldEpcEnd = epcEnd;
+  int oldEpc = epc, oldEpcEnd = epcEnd;
   int buf[WPC_LEN * 2 + 1];
   for (int i = 0; i < WPC_LEN; ++i) {
     buf[i]           = wpc   [i];
@@ -1178,15 +1153,12 @@ int expression(int num)
   }
   buf[WPC_LEN * 2] = nextPc;
 
-  epc    = expressionBegin;
-  epcEnd = expressionEnd;
+  epc = wpc[num]; epcEnd = wpcEnd[num];
   int er = evalExpression(LOWEST_PRECEDENCE);
-  if (epc < epcEnd) // 式を最後まで解釈できなかったらエラー
+  if (epc < epcEnd)
     return -1;
 
-  // 保存しておいた変数を復元する
-  epc    = oldEpc;
-  epcEnd = oldEpcEnd;
+  epc = oldEpc; epcEnd = oldEpcEnd;
   for (int i = 0; i < WPC_LEN; ++i) {
     wpc   [i] = buf[i];
     wpcEnd[i] = buf[i + WPC_LEN];
@@ -1195,7 +1167,7 @@ int expression(int num)
   return er;
 }
 
-enum conditionType { ConditionIsTrue = 0, ConditionIsFalse };
+enum { ConditionIsTrue = 0, ConditionIsFalse };
 
 //                       je    jne   jl    jge   jle   jg
 int conditionCodes[6] = {0x84, 0x85, 0x8c, 0x8d, 0x8e, 0x8f};
@@ -1276,17 +1248,11 @@ void defLabel(int tokenCode)
 }
 
 #define BLOCK_INFO_UNIT_SIZE 10
-int blockInfo[ BLOCK_INFO_UNIT_SIZE * 100 ], blockDepth, loopDepth;
-/*
-  blockInfo[ blockDepth ] -> 現ブロックのblockTypeを取得する
-  blockInfo[ blockDepth - BLOCK_INFO_UNIT_SIZE ] -> 現ブロックの1つ外側のブロックのblockTypeを取得する
-  blockInfo[ blockDepth - BLOCK_INFO_UNIT_SIZE * 2 ] -> 現ブロックの2つ外側のブロックのblockTypeを取得する
-*/
+int blockInfo[BLOCK_INFO_UNIT_SIZE * 100], blockDepth, loopDepth;
 
-#define BLOCK_TYPE 0
-enum blockType { IfBlock = 1, ForBlock, MainFnBlock };
-enum ifBlockInfo { IfLabel0 = 1, IfLabel1 };
-enum forBlockInfo { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
+enum { BlockType, IfBlock, ForBlock, MainBlock };
+enum { IfLabel0 = 1, IfLabel1 };
+enum { ForBegin = 1, ForContinue, ForBreak, ForLoopDepth, ForWpc1, ForWpcEnd1, ForWpc2, ForWpcEnd2 };
 
 // lenで渡した数の式を評価し、その結果を使ってputIcX86をする
 int exprPutIcX86(int er, int len, void *fn, int *err)
@@ -1312,12 +1278,11 @@ int exprPutIcX86(int er, int len, void *fn, int *err)
 
 int codedump;
 
-int compile(String sourceCode)
+int compile(String src)
 {
-  int nTokens = lexer(sourceCode, tokenCodes);
+  int *tc = tokenCodes; // トークンコードを格納している配列
 
-  String *ts = tokenStrs;  // 添字に指定したトークンコードに対応するトークン文字列のポインタを格納している配列
-  int    *tc = tokenCodes; // トークンコードを格納している配列
+  int nTokens = lexer(src, tokenCodes);
   tc[nTokens++] = Semicolon; // 末尾に「;」を付け忘れることが多いので、付けてあげる
   tc[nTokens] = tc[nTokens + 1] = tc[nTokens + 2] = tc[nTokens + 3] = Period; // エラー表示用
 
@@ -1387,20 +1352,20 @@ int compile(String sourceCode)
     else if (match(7, "time;", pc)) {
       exprPutIcX86(0, 0, printElapsedTime, &e0);
     }
-    else if (match(11, "if (!!**0) {", pc)) { // ブロックif文
+    else if (match(11, "if (!!**0) {", pc)) { // if文
       blockDepth += BLOCK_INFO_UNIT_SIZE;
       curBlock = &blockInfo[blockDepth];
-      curBlock[ BLOCK_TYPE ] = IfBlock;
-      curBlock[ IfLabel0   ] = tmpLabelAlloc(); // 条件不成立のときの飛び先
-      curBlock[ IfLabel1   ] = 0;
+      curBlock[ BlockType ] = IfBlock;
+      curBlock[ IfLabel0  ] = tmpLabelAlloc(); // 条件不成立のときの飛び先
+      curBlock[ IfLabel1  ] = 0;
       ifgoto(0, ConditionIsFalse, curBlock[IfLabel0]);
     }
-    else if (match(12, "} else {", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
+    else if (match(12, "} else {", pc) && curBlock[BlockType] == IfBlock) {
       curBlock[ IfLabel1 ] = tmpLabelAlloc(); // else節の終端
       putIcX86("e9_%0l;", &vars[curBlock[IfLabel1]], 0, 0, 0); // jmp rel16/32
       defLabel(curBlock[IfLabel0]);
     }
-    else if (match(13, "}", pc) && curBlock[BLOCK_TYPE] == IfBlock) {
+    else if (match(13, "}", pc) && curBlock[BlockType] == IfBlock) {
       if (curBlock[IfLabel1] == 0)
         defLabel(curBlock[IfLabel0]);
       else
@@ -1410,26 +1375,23 @@ int compile(String sourceCode)
     else if (match(14, "for (!!***0; !!***1; !!***2) {", pc)) { // for文
       blockDepth += BLOCK_INFO_UNIT_SIZE;
       curBlock = &blockInfo[blockDepth];
-      curBlock[ BLOCK_TYPE  ] = ForBlock;
-      curBlock[ ForBegin    ] = tmpLabelAlloc();
-      curBlock[ ForContinue ] = tmpLabelAlloc();
-      curBlock[ ForBreak    ] = tmpLabelAlloc();
-
-      // ループを開始する直前のloopDepthとあとで式を評価する際に必要になる値を保存しておく
+      curBlock[ BlockType    ] = ForBlock;
+      curBlock[ ForBegin     ] = tmpLabelAlloc();
+      curBlock[ ForContinue  ] = tmpLabelAlloc();
+      curBlock[ ForBreak     ] = tmpLabelAlloc();
       curBlock[ ForLoopDepth ] = loopDepth;
       curBlock[ ForWpc1      ] = wpc   [1];
       curBlock[ ForWpcEnd1   ] = wpcEnd[1];
       curBlock[ ForWpc2      ] = wpc   [2];
       curBlock[ ForWpcEnd2   ] = wpcEnd[2];
-
       loopDepth = blockDepth;
 
       e0 = expression(0);
-      if (wpc[1] < wpcEnd[1]) // !!***1に何らかの式が書いてある
-        ifgoto(1, ConditionIsFalse, curBlock[ForBreak]); // 最初から条件不成立の場合、ブロックを実行しない
+      if (wpc[1] < wpcEnd[1])
+        ifgoto(1, ConditionIsFalse, curBlock[ForBreak]);
       defLabel(curBlock[ForBegin]);
     }
-    else if (match(15, "}", pc) && curBlock[BLOCK_TYPE] == ForBlock) {
+    else if (match(15, "}", pc) && curBlock[BlockType] == ForBlock) {
       defLabel(curBlock[ForContinue]);
 
       int wpc1 = curBlock[ForWpc1];
@@ -1463,6 +1425,7 @@ int compile(String sourceCode)
           putIcX86("e9_%0l;", &vars[curBlock[ForBegin]], 0, 0, 0); // jmp rel16/32
       }
       defLabel(curBlock[ForBreak]);
+
       loopDepth = curBlock[ForLoopDepth];
       blockDepth -= BLOCK_INFO_UNIT_SIZE;
     }
@@ -1558,9 +1521,9 @@ int compile(String sourceCode)
     else if (match(30, "void aMain() {", pc)) {
       blockDepth += BLOCK_INFO_UNIT_SIZE;
       curBlock = &blockInfo[blockDepth];
-      curBlock[BLOCK_TYPE] = MainFnBlock; // ただ認識しているだけで何もしていない
+      curBlock[BlockType] = MainBlock; // ただ認識しているだけで何もしていない
     }
-    else if (match(31, "}", pc) && curBlock[BLOCK_TYPE] == MainFnBlock) {
+    else if (match(31, "}", pc) && curBlock[BlockType] == MainBlock) {
       blockDepth -= BLOCK_INFO_UNIT_SIZE; // ただコードブロックを閉じているだけ
     }
     else if (match(32, "#", pc)) {
@@ -1608,9 +1571,9 @@ int compile(String sourceCode)
 
       nextPc = pc + 2; // ) と ; の分
     }
-    else if (match(38, "!!*3 = mul64shr(!!*0, !!*1, !!*2);", pc) && strtol(ts[tc[tc[wpc[2]]]], 0, 0) > 0) {
+    else if (match(38, "!!*3 = mul64shr(!!*0, !!*1, !!*2);", pc) && strtol(tokenStrs[tc[tc[wpc[2]]]], 0, 0) > 0) {
       putIcX86("8b_%0m0; f7_%1m5; 0f_ac_d0_%2c; 89_%3m0;",
-          &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], (IntPtr) strtol(ts[tc[wpc[2]]], 0, 0), &vars[tc[wpc[3]]]);
+          &vars[tc[wpc[0]]], &vars[tc[wpc[1]]], (IntPtr) strtol(tokenStrs[tc[wpc[2]]], 0, 0), &vars[tc[wpc[3]]]);
       /*
         8b_%0m0      -> mov r/m16/32,%eax
         f7_%1m5      -> imul r/m16/32      # eaxに%mで指定した値を掛け算して、結果をedx:eaxに入れる
@@ -1645,32 +1608,33 @@ int compile(String sourceCode)
   regVarSaveLoad(RvSave); // 次回実行時にレジスタ変数の値を引き継ぐ
   putIcX86("83_c4_7c; 61; c3;", 0, 0, 0, 0); // add $0x7c,%esp; popa; ret;
 
-  unsigned char *end = ip, *src, *dest;
+  unsigned char *end = ip, *label, *dest;
   for (int i = 0; i < jp; ++i) { // ジャンプ命令の最適化
-    src  = jmps[i] + instructions;
-    dest = *(IntPtr) get32(src) + instructions;
+    label = jmps[i] + instructions;
+    dest = *(IntPtr) get32(label) + instructions;
     while (*dest == 0xe9) { // 飛び先がjmp命令だったら、さらにその先を読む
-      put32(src, get32(dest + 1));
+      put32(label, get32(dest + 1));
       dest = *(IntPtr) get32(dest + 1) + instructions;
     }
   }
   for (int i = 0; i < jp; ++i) { // 飛び先を指定する（相対値にする）
-    src  = jmps[i] + instructions;
-    dest = *(IntPtr) get32(src) + instructions;
-    put32(src, dest - (src + 4));
+    label = jmps[i] + instructions;
+    dest = *(IntPtr) get32(label) + instructions;
+    put32(label, dest - (label + 4));
   }
   return end - instructions;
 err:
-  printf("syntax error: %s %s %s %s\n", ts[tc[pc]], ts[tc[pc + 1]], ts[tc[pc + 2]], ts[tc[pc + 3]]);
+  printf("syntax error: %s %s %s %s\n", tokenStrs[tc[pc]], tokenStrs[tc[pc + 1]], tokenStrs[tc[pc + 2]], tokenStrs[tc[pc + 3]]);
   return -1;
 }
 
 AWindow *win;
 
-int run(String sourceCode)
+int run(String src)
 {
-  if (compile(sourceCode) < 0)
+  if (compile(src) < 0)
     return 1;
+
   if (codedump == 0) {
     void (*exec)() = (void (*)()) instructions;
     t0 = clock();
