@@ -357,10 +357,10 @@ String opBins[] = { // 二項演算子のための機械語
   "8b_%1m0; 23_%2m0; 83_f8_00; 0f_95_c0; 0f_b6_c0; 89_%0m0;", // AndAnd
 };
 
-inline static String getOpBin(int tokenCode)
+inline static String getOpBin(int op)
 {
-  assert(Equal <= tokenCode && tokenCode < Assign);
-  return opBins[tokenCode - Equal];
+  assert(Equal <= op && op < Assign);
+  return opBins[op - Equal];
 }
 
 // 渡された文字が16進数に使える文字なら、それを0-15の数に変換して返す
@@ -441,13 +441,13 @@ unsigned char *prevInstrBegin; // 1つ前の命令の開始位置（さらにそ
 unsigned char *setccBegin;     // SETcc命令を見つけたら、その先頭の位置を記録する
 
 // トークンコードを受け取り、定数か変数かを判定する
-int isConst(int tokenCode)
+int isConst(int i)
 {
-  if ('0' <= tokenStrs[tokenCode][0] && tokenStrs[tokenCode][0] <= '9')
+  if ('0' <= tokenStrs[i][0] && tokenStrs[i][0] <= '9')
     return 1;
-  if (tokenStrs[tokenCode][0] == '-' && '0' <= tokenStrs[tokenCode][1] && tokenStrs[tokenCode][1] <= '9')
+  if (tokenStrs[i][0] == '-' && '0' <= tokenStrs[i][1] && tokenStrs[i][1] <= '9')
     return 1;
-  if (tokenStrs[tokenCode][0] == '"')
+  if (tokenStrs[i][0] == '"')
     return 1;
 
   return 0;
@@ -469,13 +469,13 @@ int getConstM(unsigned char *p)
 }
 
 // 受け取ったトークンコードが定数であれば計算結果のトークンを返す。そうでなければ0を返す
-int calcConstForPrefixOp(int operator, int tokenCodeA)
+int calcConstForPrefixOp(int op, int a)
 {
-  if (isConst(tokenCodeA) == 0)
+  if (isConst(a) == 0)
     return 0;
 
-  int var = 0, varA = vars[tokenCodeA];
-  switch (operator) {
+  int var = 0, varA = vars[a];
+  switch (op) {
   case Minus: var = -varA; break;
   }
 
@@ -485,13 +485,13 @@ int calcConstForPrefixOp(int operator, int tokenCodeA)
 }
 
 // 受け取ったトークンコードが定数であれば計算結果のトークンを返す。そうでなければ0を返す
-int calcConstForInfixOp(int operator, int tokenCodeA, int tokenCodeB)
+int calcConstForInfixOp(int op, int a, int b)
 {
-  if (isConst(tokenCodeA) == 0 || isConst(tokenCodeB) == 0)
+  if (isConst(a) == 0 || isConst(b) == 0)
     return 0;
 
-  int var = 0, varA = vars[tokenCodeA], varB = vars[tokenCodeB];
-  switch (operator) {
+  int var = 0, varA = vars[a], varB = vars[b];
+  switch (op) {
   case Equal:      var = varA == varB; break;
   case NotEq:      var = varA != varB; break;
   case Les:        var = varA <  varB; break;
@@ -596,12 +596,12 @@ void optimizeX86()
         8b 05 94 0a 42 00; // eax = _t1; 無駄な読み込み
       */
       ip = instrBegin; // 8b命令を削除
-      int tokenCode = (IntPtr) get32(preInstructionBegin + 2) - vars;
-      --varCounters[tokenCode];
+      int mem = (IntPtr) get32(prevInstrBegin + 2) - vars;
+      --varCounters[mem];
 
-      if (Tmp0 <= tokenCode && tokenCode <= Tmp9) {
-        ip = preInstructionBegin; // 89命令を削除
-        --varCounters[tokenCode];
+      if (Tmp0 <= mem && mem <= Tmp9) {
+        ip = prevInstrBegin; // 89命令を削除
+        --varCounters[mem];
       }
     }
     prevInstrBegin = instrBegin;
@@ -831,10 +831,10 @@ int tmpAlloc()
   return Tmp0 + i;
 }
 
-void tmpFree(int tokenCode)
+void tmpFree(int i)
 {
-  if (Tmp0 <= tokenCode && tokenCode <= Tmp9)
-    tmpFlags[ tokenCode - Tmp0 ] = 0;
+  if (Tmp0 <= i && i <= Tmp9)
+    tmpFlags[i - Tmp0] = 0;
 }
 
 clock_t t0;
@@ -1212,7 +1212,7 @@ int tmpLabelAlloc()
 int align;
 
 // ラベルに対応するipの位置を記録する
-void defLabel(int tokenCode)
+void defLabel(int label)
 {
   // 命令が短くなりすぎて速度が出せないアドレスになりそうなときはNOP命令を入れる
   if (align > 0) {
@@ -1236,7 +1236,7 @@ void defLabel(int tokenCode)
     }
   }
 
-  vars[tokenCode] = ip - instructions;
+  vars[label] = ip - instructions;
   prevInstrBegin = setccBegin = NULL;
 }
 
