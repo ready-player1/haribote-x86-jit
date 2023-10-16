@@ -26,7 +26,7 @@ haribote-x86-jitは、2021年に写経したHL-9aをベースに変数名や関�
 
 - `build-essential`
 - `libc6-dev-i386`
-- `aclib` (See [aclライブラリの入手方法](https://essen.osask.jp/?a21_txt01_9))
+- `aclib` (See [aclライブラリの入手方法](https://essen.osask.jp/?a21_txt01_9#content_1_4))
 
 
 ## Building on Ubuntu
