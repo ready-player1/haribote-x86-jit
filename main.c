@@ -386,9 +386,9 @@ void put32(unsigned char *p, unsigned i)
   p[3] = (i >> 24) & 0xff; // 4バイト目に、ビット24～31の内容を書き込む
 }
 
-#define N_REGVAR 4
+#define N_REGVARS 4
 
-IntPtr regVarTable[N_REGVAR]; // レジスタ変数の割り当て状況を記録する配列
+IntPtr regVarTable[N_REGVARS]; // レジスタ変数の割り当て状況を記録する配列
 /*
   インデックスはレジスタ変数番号
 
@@ -400,7 +400,7 @@ IntPtr regVarTable[N_REGVAR]; // レジスタ変数の割り当て状況を記�
 // もしvarがレジスタに割り当てられていれば、0〜3を返す。そうでなければ-1を返す
 int getRegVarNum(IntPtr var)
 {
-  for (int i = 0; i < N_REGVAR; ++i) {
+  for (int i = 0; i < N_REGVARS; ++i) {
     if (regVarTable[i] == var)
       return i;
   }
@@ -412,7 +412,7 @@ static inline int isRegVar(int regVarNum)
   return regVarNum >= 0;
 }
 
-int regVarNum2regCode[N_REGVAR] = { // レジスタ変数番号から、レジスタ番号に変換する配列
+int regVarNum2regCode[N_REGVARS] = { // レジスタ変数番号から、レジスタ番号に変換する配列
   3, // ebx
   5, // ebp
   6, // esi
@@ -809,7 +809,7 @@ enum { RvSave = 0x89, RvLoad = 0x8b };
 
 void regVarSaveLoad(int op)
 {
-  for (int regVarNum = 0; regVarNum < N_REGVAR; ++regVarNum) {
+  for (int regVarNum = 0; regVarNum < N_REGVARS; ++regVarNum) {
     if (regVarTable[regVarNum] != 0) {
       putIcX86("%0c_%1c_%2i;",
           (IntPtr) op, (IntPtr) ( 0x05 | ((unsigned) regVarNum2regCode[regVarNum] << 3) ), regVarTable[regVarNum], 0);
@@ -1542,7 +1542,7 @@ int compile(String src)
       int regVarNum = tc[wpc[0]] - Zero;
       int firstNum = regVarNum;
 
-      IntPtr tmp[N_REGVAR];
+      IntPtr tmp[N_REGVARS];
       int pc;
       for (pc = nextPc; tc[pc] != Rparen; ++pc) {
         if (pc >= nTokens)
@@ -1550,7 +1550,7 @@ int compile(String src)
         if (tc[pc] == Comma)
           continue;
 
-        if (0 <= regVarNum && regVarNum < N_REGVAR)
+        if (0 <= regVarNum && regVarNum < N_REGVARS)
           tmp[regVarNum] = tc[pc] == Zero ? 0 : &vars[tc[pc]];
         ++regVarNum;
       }
