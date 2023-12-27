@@ -1653,13 +1653,14 @@ int run(String src)
 }
 
 String removeTrailingSemicolon(String str, size_t len) {
+  String rv = NULL;
   for (int i = len - 1; i >= 0; --i) {
     if (str[i] != ';')
-      continue;
+      break;
     str[i] = 0;
-    return &str[i];
+    rv = &str[i];
   }
-  return NULL;
+  return rv;
 }
 
 #include <unistd.h>
