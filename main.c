@@ -1691,12 +1691,15 @@ void aMain()
 
   for (int nLines = 1;; ++nLines) {
     printf("[%d]> ", nLines);
-    fgets(text, 10000, stdin);
+    if (fgets(text, 10000, stdin) == NULL) {
+      printf("\n");
+      exit(1);
+    }
     int inputLen = strlen(text);
     if (text[inputLen - 1] == '\n')
-      text[inputLen - 1] = 0;
+      text[--inputLen] = 0;
 
-    String semicolonPos = removeTrailingSemicolon(text, inputLen - 1);
+    String semicolonPos = removeTrailingSemicolon(text, inputLen);
     if (strcmp(text, "exit") == 0)
       exit(0);
     else if (strncmp(text, "run ", 4) == 0) {
