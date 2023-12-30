@@ -1689,11 +1689,12 @@ void aMain()
     exit(0);
   }
 
+  int status = 0;
   for (int nLines = 1;; ++nLines) {
     printf("[%d]> ", nLines);
     if (fgets(text, 10000, stdin) == NULL) {
       printf("\n");
-      exit(1);
+      goto exit;
     }
     int inputLen = strlen(text);
     if (text[inputLen - 1] == '\n')
@@ -1701,7 +1702,7 @@ void aMain()
 
     String semicolonPos = removeTrailingSemicolon(text, inputLen);
     if (strcmp(text, "exit") == 0)
-      exit(0);
+      goto exit;
     else if (strncmp(text, "run ", 4) == 0) {
       if (loadText(&text[4], text, 10000) != 0)
         continue;
@@ -1713,4 +1714,6 @@ void aMain()
       run(text);
     }
   }
+exit:
+  exit(status);
 }
