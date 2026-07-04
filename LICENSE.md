@@ -2,9 +2,9 @@ MIT License
 
 Copyright (c) 2021 Masahiro Oono
 
-This software is a translator for HL. HL (Haribote Language) is a programming
-language designed in 2021 by Hidemi Kawai. The original version has been
-published on the [website](http://essen.osask.jp/?a21_txt01).
+This software is a language processor for HL. HL (Haribote Language) is a
+programming language designed in 2021 by Hidemi Kawai. The original version
+has been published on the [website](http://essen.osask.jp/?a21_txt01).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
